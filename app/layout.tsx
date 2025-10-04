@@ -8,6 +8,7 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Admin Orders Management",
   description: "管理訂單系統",
+    generator: 'v0.app'
 }
 
 export default function RootLayout({
