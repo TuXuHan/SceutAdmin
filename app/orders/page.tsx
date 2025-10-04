@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useAuth } from "@/app/auth-provider"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -59,7 +59,7 @@ interface OrderStats {
   cancelled: number
 }
 
-export default function OrdersPage() {
+function OrdersPageContent() {
   const { user, isAuthenticated, loading: authLoading } = useAuth()
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
@@ -764,5 +764,20 @@ export default function OrdersPage() {
         }}
       />
     </div>
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#F5F2ED] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">載入中...</p>
+        </div>
+      </div>
+    }>
+      <OrdersPageContent />
+    </Suspense>
   )
 }
