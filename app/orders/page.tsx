@@ -82,6 +82,8 @@ function OrdersPageContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showSubscribersDialog, setShowSubscribersDialog] = useState(false)
   const [subscribersCount, setSubscribersCount] = useState(0)
+  const [updating711Status, setUpdating711Status] = useState(false)
+  const [statusUpdateMessage, setStatusUpdateMessage] = useState<string | null>(null)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 500,
     maxRetries: 1
@@ -112,7 +114,7 @@ function OrdersPageContent() {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y"
       
-      const response = await fetch(`${supabaseUrl}/rest/v1/orders?select=*&order=updated_at.desc`, {
+      const response = await fetch(`${supabaseUrl}/rest/v1/orders?select=*&order=created_at.desc`, {
         headers: {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`,
@@ -268,6 +270,46 @@ function OrdersPageContent() {
   const handleCancelEdit = () => {
     setEditingOrder(null)
     setTempOrderStatus("")
+  }
+
+  const handleUpdate711Status = async () => {
+    try {
+      setUpdating711Status(true)
+      setStatusUpdateMessage("正在查詢 7-11 物流狀態...")
+      
+      const response = await fetch('/api/update-711-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        setStatusUpdateMessage(`✅ ${result.message}`)
+        // 更新成功後重新載入訂單列表
+        await loadOrders(true)
+        
+        // 3秒後清除訊息
+        setTimeout(() => {
+          setStatusUpdateMessage(null)
+        }, 3000)
+      } else {
+        setStatusUpdateMessage(`❌ 更新失敗：${result.error || result.message}`)
+        setTimeout(() => {
+          setStatusUpdateMessage(null)
+        }, 5000)
+      }
+    } catch (err) {
+      console.error("更新 7-11 狀態錯誤:", err)
+      setStatusUpdateMessage("❌ 更新失敗，請稍後再試")
+      setTimeout(() => {
+        setStatusUpdateMessage(null)
+      }, 5000)
+    } finally {
+      setUpdating711Status(false)
+    }
   }
 
   const getStatusBadgeVariant = (status: string) => {
@@ -488,6 +530,18 @@ function OrdersPageContent() {
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
+                onClick={handleUpdate711Status}
+                disabled={updating711Status}
+                className="flex items-center gap-2 text-sm bg-[#A69E8B] text-white hover:bg-[#8A7B6C] hover:text-white"
+                size="sm"
+              >
+                <RefreshCw className={`w-4 h-4 ${updating711Status ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">
+                  {updating711Status ? '查詢中...' : '更新 7-11 狀態'}
+                </span>
+              </Button>
+              <Button 
+                variant="outline" 
                 onClick={() => loadOrders(true)}
                 className="flex items-center gap-2 text-sm"
                 size="sm"
@@ -497,6 +551,15 @@ function OrdersPageContent() {
               </Button>
             </div>
           </div>
+
+        {/* 7-11 狀態更新訊息 */}
+        {statusUpdateMessage && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50">
+            <AlertDescription className="text-blue-800">
+              {statusUpdateMessage}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {!isDatabaseConfigured && (
           <Alert className="mb-6 border-amber-200 bg-amber-50">

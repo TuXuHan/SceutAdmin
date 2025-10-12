@@ -13,7 +13,12 @@ import {
   Phone, 
   Calendar,
   ChevronLeft,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Eye,
+  EyeOff
 } from "lucide-react"
 
 interface SubscribersDialogProps {
@@ -26,6 +31,10 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
   const [loading, setLoading] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expandedSubscriber, setExpandedSubscriber] = useState<string | null>(null)
+  const [generatingRecommendations, setGeneratingRecommendations] = useState<string | null>(null)
+  const [recommendations, setRecommendations] = useState<{[key: string]: any}>({})
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const loadSubscribers = async () => {
     try {
@@ -85,6 +94,67 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
       setError(errorMessage)
     } finally {
       setSyncLoading(false)
+    }
+  }
+
+  const toggleExpanded = (subscriberId: string) => {
+    setExpandedSubscriber(expandedSubscriber === subscriberId ? null : subscriberId)
+  }
+
+  const generateRecommendations = async (subscriber: any) => {
+    try {
+      setGeneratingRecommendations(subscriber.id)
+      
+      const response = await fetch('/api/generate-recommendations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: subscriber.user_id || subscriber.id,
+          quizAnswers: subscriber.quiz_answers
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setRecommendations(prev => ({
+          ...prev,
+          [subscriber.id]: data.recommendations
+        }))
+        // 設置成功消息，3秒後自動消失
+        setSuccessMessage('✅ 推薦生成成功！結果已顯示在下方')
+        setTimeout(() => setSuccessMessage(null), 3000)
+        console.log('推薦生成成功！', data.recommendations)
+      } else {
+        const errorData = await response.json()
+        console.error('生成推薦失敗:', errorData.error)
+        // 可以在這裡設置錯誤狀態來顯示錯誤訊息
+        setRecommendations(prev => ({
+          ...prev,
+          [subscriber.id]: { error: errorData.error || '生成推薦失敗' }
+        }))
+      }
+    } catch (err) {
+      console.error("生成推薦錯誤:", err)
+      // 設置錯誤狀態
+      setRecommendations(prev => ({
+        ...prev,
+        [subscriber.id]: { error: '生成推薦時發生錯誤，請稍後再試' }
+      }))
+    } finally {
+      setGeneratingRecommendations(null)
+    }
+  }
+
+  const formatQuizAnswers = (quizAnswers: any) => {
+    if (!quizAnswers) return null
+    
+    try {
+      const answers = typeof quizAnswers === 'string' ? JSON.parse(quizAnswers) : quizAnswers
+      return answers
+    } catch {
+      return null
     }
   }
 
@@ -220,10 +290,19 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                   {subscribers.map((subscriber: any) => (
                     <div key={subscriber.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                          <h3 className="font-medium text-gray-800 text-base">
-                            {subscriber.name || subscriber.email}
-                          </h3>
+                        <div 
+                          className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 cursor-pointer flex-1"
+                          onClick={() => toggleExpanded(subscriber.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            {expandedSubscriber === subscriber.id ? 
+                              <ChevronUp className="w-4 h-4 text-gray-500" /> : 
+                              <ChevronDown className="w-4 h-4 text-gray-500" />
+                            }
+                            <h3 className="font-medium text-gray-800 text-base">
+                              {subscriber.name || subscriber.email}
+                            </h3>
+                          </div>
                           <div className="flex gap-2 flex-wrap">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                               subscriber.subscription_status === 'active' 
@@ -324,6 +403,174 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                       {subscriber.updated_at && (
                         <div className="mt-2 text-xs text-gray-500">
                           最後更新: {new Date(subscriber.updated_at).toLocaleString("zh-TW")}
+                        </div>
+                      )}
+
+                      {/* 展開的詳細資訊 */}
+                      {expandedSubscriber === subscriber.id && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
+                          {/* 操作按鈕區域 */}
+                          <div className="flex flex-col items-end gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => generateRecommendations(subscriber)}
+                              disabled={generatingRecommendations === subscriber.id}
+                              className="flex items-center gap-2 bg-[#A69E8B] hover:bg-[#8A7B6C]"
+                            >
+                              <Sparkles className={`w-4 h-4 ${generatingRecommendations === subscriber.id ? 'animate-spin' : ''}`} />
+                              {generatingRecommendations === subscriber.id ? '生成中...' : '生成個人化推薦'}
+                            </Button>
+                            
+                            {/* 成功消息顯示 */}
+                            {successMessage && (
+                              <div className="text-sm text-green-600 bg-green-50 px-3 py-1 rounded-md border border-green-200 animate-pulse">
+                                {successMessage}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 測驗答案詳細資訊 */}
+                          {subscriber.quiz_answers && (
+                            <div>
+                              <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                                <Eye className="w-4 h-4" />
+                                測驗答案詳細資訊
+                              </h4>
+                              <div className="bg-gray-50 rounded-lg p-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                  {(() => {
+                                    const answers = formatQuizAnswers(subscriber.quiz_answers)
+                                    if (!answers) return <p className="text-gray-500">無法解析測驗答案</p>
+                                    
+                                    return Object.entries(answers).map(([question, answer]: [string, any]) => (
+                                      <div key={question} className="space-y-1">
+                                        <div className="font-medium text-gray-700">{question}:</div>
+                                        <div className="text-gray-600 pl-2">
+                                          {Array.isArray(answer) ? answer.join(', ') : String(answer)}
+                                        </div>
+                                      </div>
+                                    ))
+                                  })()}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 推薦結果 */}
+                          {recommendations[subscriber.id] && (
+                            <div>
+                              <h4 className="font-medium text-gray-800 mb-4 flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-amber-500" />
+                                個人化推薦結果
+                              </h4>
+                              
+                              {/* 錯誤狀態顯示 */}
+                              {recommendations[subscriber.id].error ? (
+                                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
+                                  <div className="text-red-600 font-medium mb-2">
+                                    ❌ 推薦生成失敗
+                                  </div>
+                                  <div className="text-red-500 text-sm">
+                                    {recommendations[subscriber.id].error}
+                                  </div>
+                                  <button 
+                                    onClick={() => generateRecommendations(subscriber)}
+                                    className="mt-3 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
+                                    disabled={generatingRecommendations === subscriber.id}
+                                  >
+                                    {generatingRecommendations === subscriber.id ? '重新生成中...' : '重新生成推薦'}
+                                  </button>
+                                </div>
+                              ) : (
+                              <>
+                              {/* 正常推薦結果顯示 */}
+                              <div className="grid gap-4">
+                                {Object.entries(recommendations[subscriber.id]).map(([type, rec]: [string, any]) => {
+                                  const typeConfig = {
+                                    primary: { 
+                                      title: '🥇 主要推薦', 
+                                      bgColor: 'bg-gradient-to-br from-amber-50 to-yellow-50', 
+                                      borderColor: 'border-amber-200',
+                                      textColor: 'text-amber-900',
+                                      badgeColor: 'bg-amber-100 text-amber-800'
+                                    },
+                                    secondary: { 
+                                      title: '🥈 次要推薦', 
+                                      bgColor: 'bg-gradient-to-br from-blue-50 to-indigo-50', 
+                                      borderColor: 'border-blue-200',
+                                      textColor: 'text-blue-900',
+                                      badgeColor: 'bg-blue-100 text-blue-800'
+                                    },
+                                    alternative: { 
+                                      title: '🥉 替代推薦', 
+                                      bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50', 
+                                      borderColor: 'border-purple-200',
+                                      textColor: 'text-purple-900',
+                                      badgeColor: 'bg-purple-100 text-purple-800'
+                                    }
+                                  }
+                                  
+                                  const config = typeConfig[type as keyof typeof typeConfig]
+                                  
+                                  return (
+                                    <div key={type} className={`${config.bgColor} rounded-xl p-5 border-2 ${config.borderColor} shadow-sm hover:shadow-md transition-shadow`}>
+                                      {/* 標題區域 */}
+                                      <div className="flex items-center justify-between mb-3">
+                                        <h5 className={`font-semibold text-lg ${config.textColor}`}>
+                                          {config.title}
+                                        </h5>
+                                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${config.badgeColor}`}>
+                                          {rec.confidence}% 匹配度
+                                        </span>
+                                      </div>
+                                      
+                                      {/* 香水資訊 */}
+                                      <div className="space-y-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                          <div className={`font-bold text-xl ${config.textColor}`}>
+                                            {rec.name}
+                                          </div>
+                                          <div className="text-sm text-gray-600 bg-white px-2 py-1 rounded-md border">
+                                            {rec.brand}
+                                          </div>
+                                        </div>
+                                        
+                                        <div className={`text-sm leading-relaxed ${config.textColor.replace('900', '700')}`}>
+                                          {rec.description}
+                                        </div>
+                                        
+                                        {/* 推薦理由 */}
+                                        <div className="mt-4">
+                                          <div className={`font-medium text-sm mb-2 ${config.textColor}`}>
+                                            💡 推薦理由：
+                                          </div>
+                                          <div className="grid gap-2">
+                                            {rec.reasons.map((reason: string, index: number) => (
+                                              <div key={index} className="flex items-start gap-2">
+                                                <span className={`text-xs font-medium px-2 py-1 rounded-full ${config.badgeColor} flex-shrink-0 mt-0.5`}>
+                                                  {index + 1}
+                                                </span>
+                                                <span className={`text-sm ${config.textColor.replace('900', '700')}`}>
+                                                  {reason}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                              
+                              {/* 生成時間 */}
+                              <div className="mt-4 text-xs text-gray-500 text-center">
+                                ✨ 推薦生成時間：{new Date().toLocaleString('zh-TW')}
+                              </div>
+                              </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
