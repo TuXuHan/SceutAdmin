@@ -76,31 +76,31 @@
 
 ### 1. 克隆專案
 
-```bash
+\`\`\`bash
 cd /Users/SummerTu/Desktop/Sceut/Admin
-```
+\`\`\`
 
 ### 2. 安裝依賴
 
-```bash
+\`\`\`bash
 npm install
 # 或
 yarn install
 # 或
 pnpm install
-```
+\`\`\`
 
 ### 3. 環境變數設置
 
 複製環境變數範本：
 
-```bash
+\`\`\`bash
 cp env.example .env.local
-```
+\`\`\`
 
 編輯 `.env.local`，填入您的 Supabase 配置：
 
-```env
+\`\`\`env
 # Supabase URL（必填）
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 
@@ -110,13 +110,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 # Supabase Service Role Key（必填 - 用於管理後台）
 # ⚠️ 重要：此 key 擁有完整資料庫權限，請勿暴露在前端
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-```
+\`\`\`
 
 ### 4. 啟動開發伺服器
 
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 訪問 http://localhost:3000 查看管理後台
 
@@ -157,7 +157,7 @@ npm run dev
 
 #### 1. `orders` 表
 
-```sql
+\`\`\`sql
 CREATE TABLE orders (
   id TEXT PRIMARY KEY,
   shopify_order_id TEXT,
@@ -177,11 +177,11 @@ CREATE TABLE orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-```
+\`\`\`
 
 #### 2. `subscribers` 表
 
-```sql
+\`\`\`sql
 CREATE TABLE subscribers (
   id SERIAL PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id),
@@ -202,11 +202,11 @@ CREATE TABLE subscribers (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-```
+\`\`\`
 
 #### 3. `user_profiles` 表
 
-```sql
+\`\`\`sql
 CREATE TABLE user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT,
@@ -222,7 +222,7 @@ CREATE TABLE user_profiles (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-```
+\`\`\`
 
 ### Row Level Security (RLS)
 
@@ -352,7 +352,7 @@ CREATE TABLE user_profiles (
 獲取所有訂單列表
 
 **回應範例：**
-```json
+\`\`\`json
 {
   "success": true,
   "orders": [
@@ -366,26 +366,26 @@ CREATE TABLE user_profiles (
     }
   ]
 }
-```
+\`\`\`
 
 #### PUT `/api/orders`
 更新訂單狀態
 
 **請求範例：**
-```json
+\`\`\`json
 {
   "id": "123",
   "order_status": "shipped"
 }
-```
+\`\`\`
 
 **回應範例：**
-```json
+\`\`\`json
 {
   "success": true,
   "order": { ... }
 }
-```
+\`\`\`
 
 ---
 
@@ -395,7 +395,7 @@ CREATE TABLE user_profiles (
 獲取所有訂閱者列表
 
 **回應範例：**
-```json
+\`\`\`json
 {
   "success": true,
   "subscribers": [
@@ -411,20 +411,20 @@ CREATE TABLE user_profiles (
   ],
   "count": 6
 }
-```
+\`\`\`
 
 #### POST `/api/subscribers`
 同步訂閱者資料
 
 **請求範例：**
-```json
+\`\`\`json
 {
   "action": "sync"
 }
-```
+\`\`\`
 
 **回應範例：**
-```json
+\`\`\`json
 {
   "success": true,
   "message": "同步完成",
@@ -436,7 +436,7 @@ CREATE TABLE user_profiles (
   },
   "errors": []
 }
-```
+\`\`\`
 
 ---
 
@@ -449,7 +449,7 @@ CREATE TABLE user_profiles (
 
 ## 📁 專案結構
 
-```
+\`\`\`
 Admin/
 ├── app/                          # Next.js App Router
 │   ├── api/                      # API 路由
@@ -495,7 +495,7 @@ Admin/
 ├── postcss.config.mjs           # PostCSS 配置
 ├── tailwind.config.ts           # Tailwind CSS 配置
 └── tsconfig.json                # TypeScript 配置
-```
+\`\`\`
 
 ---
 
@@ -503,35 +503,35 @@ Admin/
 
 ### 開發模式
 
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 - 啟動開發伺服器：http://localhost:3000
 - 支援熱重載（Hot Reload）
 - 顯示詳細錯誤信息
 
 ### 建構生產版本
 
-```bash
+\`\`\`bash
 npm run build
-```
+\`\`\`
 - 產生優化的生產版本
 - 檢查 TypeScript 錯誤
 - 優化圖片和資源
 
 ### 啟動生產伺服器
 
-```bash
+\`\`\`bash
 npm start
-```
+\`\`\`
 - 需要先運行 `npm run build`
 - 生產環境優化
 
 ### 程式碼檢查
 
-```bash
+\`\`\`bash
 npm run lint
-```
+\`\`\`
 - 使用 ESLint 檢查代碼質量
 - 自動修復簡單問題
 
@@ -560,13 +560,13 @@ npm run lint
 4. 重啟開發伺服器：按 `Ctrl+C` 停止，然後 `npm run dev`
 
 **驗證**：
-```bash
+\`\`\`bash
 # 檢查環境變數文件
 cat .env.local | grep SUPABASE_SERVICE_ROLE_KEY
 
 # 測試 API
 curl http://localhost:3000/api/subscribers
-```
+\`\`\`
 
 ---
 
@@ -614,7 +614,7 @@ curl http://localhost:3000/api/subscribers
 ### 問題 5: 樣式顯示異常
 
 **解決方法**：
-```bash
+\`\`\`bash
 # 清除 Next.js 快取
 rm -rf .next
 
@@ -624,7 +624,7 @@ npm install
 
 # 重新啟動
 npm run dev
-```
+\`\`\`
 
 ---
 
@@ -635,7 +635,7 @@ npm run dev
 - Node.js 版本過舊
 
 **解決方法**：
-```bash
+\`\`\`bash
 # 檢查 Node.js 版本（需要 18.17+）
 node --version
 
@@ -644,7 +644,7 @@ PORT=3001 npm run dev
 
 # 或在 package.json 修改 scripts
 "dev": "next dev -p 3001"
-```
+\`\`\`
 
 ---
 
@@ -670,7 +670,7 @@ PORT=3001 npm run dev
 
 ### 有用的命令
 
-```bash
+\`\`\`bash
 # 查看環境變數（隱藏敏感信息）
 grep SUPABASE .env.local | sed 's/=.*/=***/'
 
@@ -685,7 +685,7 @@ lsof -i :3000
 rm -rf .next node_modules package-lock.json
 npm install
 npm run dev
-```
+\`\`\`
 
 ---
 

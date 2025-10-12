@@ -584,4 +584,3 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
     </div>
   )
 }
-
