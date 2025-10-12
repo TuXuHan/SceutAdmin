@@ -29,7 +29,7 @@
 - **回應**: 包含 3 種推薦類型的完整資訊
 
 ### OpenAI 集成
-```typescript
+\`\`\`typescript
 // 條件初始化 OpenAI 客戶端
 let openai: OpenAI | null = null
 if (process.env.OPENAI_API_KEY) {
@@ -40,7 +40,7 @@ if (process.env.OPENAI_API_KEY) {
 
 // 智能推薦生成
 const recommendations = await generatePerfumeRecommendations(quizAnswers)
-```
+\`\`\`
 
 ### 備用推薦機制
 - 當 OpenAI API 不可用時自動啟用
@@ -74,24 +74,24 @@ const recommendations = await generatePerfumeRecommendations(quizAnswers)
 
 ### 環境變量設置
 創建 `.env.local` 文件：
-```bash
+\`\`\`bash
 # OpenAI API 配置
 OPENAI_API_KEY=your_openai_api_key_here
 
 # Supabase 配置
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
+\`\`\`
 
 ### 安裝依賴
-```bash
+\`\`\`bash
 npm install openai
-```
+\`\`\`
 
 ### 啟動服務
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 ## 🎯 測試結果
 
@@ -103,14 +103,14 @@ npm run dev
 - [x] 響應式設計正常
 
 ### ✅ API 測試
-```bash
+\`\`\`bash
 # 測試命令
 curl -X POST http://localhost:3000/api/generate-recommendations \
   -H "Content-Type: application/json" \
   -d '{"userId":"test","quizAnswers":{"mood":"calm","scent":"floral"}}'
 
 # 預期結果: HTTP 200 + 完整推薦 JSON
-```
+\`\`\`
 
 ## 📊 效能優化
 

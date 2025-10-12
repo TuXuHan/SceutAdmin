@@ -8,7 +8,7 @@
 
 在 Admin 目錄下創建 `.env.local` 文件，並添加以下內容：
 
-```bash
+\`\`\`bash
 # Supabase 配置
 NEXT_PUBLIC_SUPABASE_URL=https://bbrnbyzjmxgxnczzymdt.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
@@ -16,7 +16,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 
 # OpenAI 配置
 OPENAI_API_KEY=your_openai_api_key_here
-```
+\`\`\`
 
 ### 2. 獲取 OpenAI API 金鑰
 
@@ -31,9 +31,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 設置完環境變量後，重新啟動開發服務器：
 
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 ## 功能說明
 
