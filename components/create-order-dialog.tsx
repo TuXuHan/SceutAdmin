@@ -19,8 +19,13 @@ interface UserProfile {
   postal_code?: string
   country?: string
   "711"?: string
+  delivery_method?: string
   created_at: string
   updated_at: string
+  // 訂閱相關資訊
+  subscription_status?: string
+  monthly_fee?: string
+  next_payment_date?: string
 }
 
 interface CreateOrderDialogProps {
@@ -47,6 +52,7 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
     shipping_address: "",
     city: "",
     "711": "",
+    delivery_method: "",
     total_price: "",
     currency: "TWD",
     order_status: "pending",
@@ -99,7 +105,8 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
       customer_phone: user.phone || "",
       shipping_address: user.address || "",
       city: user.city || "",
-      "711": user["711"] || ""
+      "711": user["711"] || "",
+      delivery_method: user.delivery_method || ""
     }))
   }
 
@@ -114,7 +121,8 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
       customer_phone: "",
       shipping_address: "",
       city: "",
-      "711": ""
+      "711": "",
+      delivery_method: ""
     }))
   }
 
@@ -123,16 +131,25 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
     try {
       setSubmitting(true)
       
+      const orderPayload = {
+        shopify_order_id: orderData.shopify_order_id,
+        subscriber_name: orderData.subscriber_name,
+        customer_email: orderData.customer_email,
+        total_price: parseFloat(orderData.total_price) || 0,
+        currency: orderData.currency || 'TWD',
+        order_status: orderData.order_status || 'pending',
+        user_id: selectedUser?.id || null,
+        perfume_name: orderData.perfume_name || null,
+        delivery_method: orderData.delivery_method || null,
+        "711": orderData["711"] || null
+      }
+      
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          ...orderData,
-          total_price: parseFloat(orderData.total_price) || 0,
-          user_id: selectedUser?.id || null
-        })
+        body: JSON.stringify(orderPayload)
       })
 
       const result = await response.json()
@@ -149,6 +166,7 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
           shipping_address: "",
           city: "",
           "711": "",
+          delivery_method: "",
           total_price: "",
           currency: "TWD",
           order_status: "pending",
@@ -187,13 +205,13 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
           {/* 用戶選擇區域 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">選擇用戶</CardTitle>
+              <CardTitle className="text-lg">選擇訂閱者</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  placeholder="搜尋用戶姓名或Email..."
+                  placeholder="搜尋訂閱者姓名或Email..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value)
@@ -227,16 +245,38 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                         onClick={() => selectUser(user)}
                       >
                         <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-medium">{user.name}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="font-medium">{user.name}</div>
+                              {user.subscription_status && (
+                                <Badge 
+                                  variant={user.subscription_status === 'active' ? 'default' : 'secondary'}
+                                  className={`text-xs ${
+                                    user.subscription_status === 'active' 
+                                      ? 'bg-green-100 text-green-800 border-green-300' 
+                                      : 'bg-gray-100 text-gray-800 border-gray-300'
+                                  }`}
+                                >
+                                  {user.subscription_status === 'active' ? '✓ 已訂閱' : '⏳ 待訂閱'}
+                                </Badge>
+                              )}
+                            </div>
                             <div className="text-sm text-gray-500">{user.email}</div>
+                            {user.monthly_fee && (
+                              <div className="text-xs text-gray-400">月費: NT$ {user.monthly_fee}</div>
+                            )}
+                            {user.next_payment_date && (
+                              <div className="text-xs text-gray-400">
+                                下次付款: {new Date(user.next_payment_date).toLocaleDateString("zh-TW")}
+                              </div>
+                            )}
                           </div>
                           <Badge variant="outline">選擇</Badge>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="p-4 text-center text-gray-500">沒有找到用戶</div>
+                    <div className="p-4 text-center text-gray-500">沒有找到訂閱者</div>
                   )}
                 </div>
               )}
@@ -246,14 +286,38 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                 <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <User className="w-4 h-4 text-green-600" />
-                    <span className="font-medium text-green-800">已選擇用戶</span>
+                    <span className="font-medium text-green-800">已選擇訂閱者</span>
+                    {selectedUser.subscription_status && (
+                      <Badge 
+                        variant={selectedUser.subscription_status === 'active' ? 'default' : 'secondary'}
+                        className={`text-xs ${
+                          selectedUser.subscription_status === 'active' 
+                            ? 'bg-green-100 text-green-800 border-green-300' 
+                            : 'bg-gray-100 text-gray-800 border-gray-300'
+                        }`}
+                      >
+                        {selectedUser.subscription_status === 'active' ? '✓ 已訂閱' : '⏳ 待訂閱'}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="text-sm text-green-700">
+                  <div className="text-sm text-green-700 space-y-1">
                     <div>姓名: {selectedUser.name}</div>
                     <div>Email: {selectedUser.email}</div>
                     {selectedUser.phone && <div>電話: {selectedUser.phone}</div>}
                     {selectedUser.city && <div>縣市: {selectedUser.city}</div>}
-                    {selectedUser["711"] && <div>7-11門市: {selectedUser["711"]}</div>}
+                    {selectedUser.delivery_method && (
+                      <div>配送方式: {selectedUser.delivery_method === 'home' ? '宅配' : selectedUser.delivery_method === '711' ? '7-11超商' : selectedUser.delivery_method}</div>
+                    )}
+                    {selectedUser.delivery_method === 'home' && selectedUser.address && (
+                      <div>配送地址: {selectedUser.address}</div>
+                    )}
+                    {selectedUser.delivery_method === '711' && selectedUser["711"] && (
+                      <div>7-11門市: {selectedUser["711"]}</div>
+                    )}
+                    {selectedUser.monthly_fee && <div>月費: NT$ {selectedUser.monthly_fee}</div>}
+                    {selectedUser.next_payment_date && (
+                      <div>下次付款: {new Date(selectedUser.next_payment_date).toLocaleDateString("zh-TW")}</div>
+                    )}
                   </div>
                 </div>
               )}
@@ -325,12 +389,26 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                   />
                 </div>
                 <div>
+                  <Label htmlFor="delivery_method">配送方式</Label>
+                  <select
+                    id="delivery_method"
+                    value={orderData.delivery_method}
+                    onChange={(e) => setOrderData(prev => ({ ...prev, delivery_method: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent"
+                  >
+                    <option value="">選擇配送方式</option>
+                    <option value="home">宅配</option>
+                    <option value="711">7-11超商</option>
+                  </select>
+                </div>
+                <div>
                   <Label htmlFor="711">7-11門市</Label>
                   <Input
                     id="711"
                     value={orderData["711"]}
                     onChange={(e) => setOrderData(prev => ({ ...prev, "711": e.target.value }))}
                     placeholder="7-11門市名稱"
+                    disabled={orderData.delivery_method !== '711'}
                   />
                 </div>
                 <div>
@@ -339,7 +417,8 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                     id="shipping_address"
                     value={orderData.shipping_address}
                     onChange={(e) => setOrderData(prev => ({ ...prev, shipping_address: e.target.value }))}
-                    placeholder="配送地址"
+                    placeholder={orderData.delivery_method === 'home' ? '完整配送地址' : '配送地址'}
+                    disabled={orderData.delivery_method === '711'}
                   />
                 </div>
                 <div>

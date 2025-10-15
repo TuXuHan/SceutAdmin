@@ -23,7 +23,9 @@ import {
   MapPin,
   Plus,
   Menu,
-  X
+  X,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react"
 import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
@@ -36,6 +38,8 @@ interface Order {
   customer_email: string
   customer_phone?: string
   shipping_address?: string
+  delivery_method?: string
+  "711"?: string
   order_status: string
   total_price: number
   total_amount?: number  // 保持向後兼容
@@ -78,12 +82,17 @@ function OrdersPageContent() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [editingOrder, setEditingOrder] = useState<string | null>(null)
   const [tempOrderStatus, setTempOrderStatus] = useState<string>("")
+  const [tempPerfumeName, setTempPerfumeName] = useState<string>("")
+  const [tempShopifyOrderId, setTempShopifyOrderId] = useState<string>("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showSubscribersDialog, setShowSubscribersDialog] = useState(false)
   const [subscribersCount, setSubscribersCount] = useState(0)
   const [updating711Status, setUpdating711Status] = useState(false)
   const [statusUpdateMessage, setStatusUpdateMessage] = useState<string | null>(null)
+  const [autoGeneratingOrders, setAutoGeneratingOrders] = useState(false)
+  const [autoOrderMessage, setAutoOrderMessage] = useState<string | null>(null)
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 500,
     maxRetries: 1
@@ -226,17 +235,27 @@ function OrdersPageContent() {
     loadOrders(true)
   }
 
-  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+  const updateOrderStatus = async (orderId: string, newStatus: string, perfumeName?: string, shopifyOrderId?: string) => {
     try {
+      const updateData: any = {
+        id: orderId,
+        order_status: newStatus
+      }
+      
+      if (perfumeName !== undefined) {
+        updateData.perfume_name = perfumeName
+      }
+      
+      if (shopifyOrderId !== undefined) {
+        updateData.shopify_order_id = shopifyOrderId
+      }
+      
       const response = await fetch('/api/orders', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          id: orderId,
-          order_status: newStatus
-        })
+        body: JSON.stringify(updateData)
       })
 
       if (response.ok) {
@@ -264,12 +283,14 @@ function OrdersPageContent() {
   }
 
   const handleSaveStatus = async (orderId: string) => {
-    await updateOrderStatus(orderId, tempOrderStatus)
+    await updateOrderStatus(orderId, tempOrderStatus, tempPerfumeName, tempShopifyOrderId)
   }
 
   const handleCancelEdit = () => {
     setEditingOrder(null)
     setTempOrderStatus("")
+    setTempPerfumeName("")
+    setTempShopifyOrderId("")
   }
 
   const handleUpdate711Status = async () => {
@@ -309,6 +330,51 @@ function OrdersPageContent() {
       }, 5000)
     } finally {
       setUpdating711Status(false)
+    }
+  }
+
+  const handleAutoGenerateOrders = async () => {
+    try {
+      setAutoGeneratingOrders(true)
+      setAutoOrderMessage("正在檢查需要生成訂單的訂閱者...")
+      
+      const response = await fetch('/api/auto-generate-orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        if (result.generatedOrders > 0) {
+          setAutoOrderMessage(`✅ 成功生成 ${result.generatedOrders} 個待處理訂單${result.skippedOrders > 0 ? `，跳過 ${result.skippedOrders} 個已有訂單的訂閱者` : ''}`)
+        } else {
+          setAutoOrderMessage(`ℹ️ ${result.message}`)
+        }
+        
+        // 生成成功後重新載入訂單列表
+        await loadOrders(true)
+        
+        // 5秒後清除訊息
+        setTimeout(() => {
+          setAutoOrderMessage(null)
+        }, 5000)
+      } else {
+        setAutoOrderMessage(`❌ 自動生成失敗：${result.error || result.message}`)
+        setTimeout(() => {
+          setAutoOrderMessage(null)
+        }, 5000)
+      }
+    } catch (err) {
+      console.error("自動生成訂單錯誤:", err)
+      setAutoOrderMessage("❌ 自動生成失敗，請稍後再試")
+      setTimeout(() => {
+        setAutoOrderMessage(null)
+      }, 5000)
+    } finally {
+      setAutoGeneratingOrders(false)
     }
   }
 
@@ -542,12 +608,20 @@ function OrdersPageContent() {
               </Button>
               <Button 
                 variant="outline" 
-                onClick={() => loadOrders(true)}
+                onClick={async () => {
+                  // 先執行自動生成訂單
+                  await handleAutoGenerateOrders()
+                  // 然後重新載入訂單列表
+                  await loadOrders(true)
+                }}
+                disabled={autoGeneratingOrders}
                 className="flex items-center gap-2 text-sm"
                 size="sm"
               >
-                <RefreshCw className="w-4 h-4" />
-                <span className="hidden sm:inline">重新整理</span>
+                <RefreshCw className={`w-4 h-4 ${autoGeneratingOrders ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">
+                  {autoGeneratingOrders ? '處理中...' : '重新整理'}
+                </span>
               </Button>
             </div>
           </div>
@@ -557,6 +631,15 @@ function OrdersPageContent() {
           <Alert className="mb-6 border-blue-200 bg-blue-50">
             <AlertDescription className="text-blue-800">
               {statusUpdateMessage}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* 自動訂單生成訊息 */}
+        {autoOrderMessage && (
+          <Alert className="mb-6 border-green-200 bg-green-50">
+            <AlertDescription className="text-green-800">
+              {autoOrderMessage}
             </AlertDescription>
           </Alert>
         )}
@@ -689,10 +772,26 @@ function OrdersPageContent() {
                 {filteredOrders.map((order: any) => (
                   <div key={order.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <h3 className="font-medium text-gray-800 text-sm sm:text-base">
-                          訂單 #{order.shopify_order_id || order.id}
-                        </h3>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-800 text-sm sm:text-base">
+                            訂單 #{order.shopify_order_id || '無貨號'}
+                          </h3>
+                          {/* 下拉按鈕 - 只在待處理訂單時顯示 */}
+                          {order.order_status === 'pending' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                              className="p-1 h-auto"
+                            >
+                              {expandedOrder === order.id ? 
+                                <ChevronUp className="w-4 h-4 text-gray-500" /> : 
+                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                              }
+                            </Button>
+                          )}
+                        </div>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(order.order_status)}`}>
                           {getStatusText(order.order_status)}
                         </span>
@@ -705,9 +804,13 @@ function OrdersPageContent() {
                             if (editingOrder === order.id) {
                               setEditingOrder(null)
                               setTempOrderStatus("")
+                              setTempPerfumeName("")
+                              setTempShopifyOrderId("")
                             } else {
                               setEditingOrder(order.id)
                               setTempOrderStatus(order.order_status)
+                              setTempPerfumeName(order.perfume_name || "")
+                              setTempShopifyOrderId(order.shopify_order_id || "")
                             }
                           }}
                           className="text-xs sm:text-sm"
@@ -750,7 +853,21 @@ function OrdersPageContent() {
                       <div className="text-sm text-gray-600">
                         總金額: <span className="font-medium text-gray-800">{order.currency || 'NT$'} {(order.total_price || order.total_amount || 0).toLocaleString()}</span>
                       </div>
-                      {order.shipping_address && (
+                      {/* 根據配送方式顯示不同的配送資訊 */}
+                      {order.delivery_method === 'home' && order.shipping_address && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <MapPin className="w-4 h-4" />
+                          <span className="truncate max-w-xs">宅配: {order.shipping_address}</span>
+                        </div>
+                      )}
+                      {order.delivery_method === '711' && order["711"] && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <MapPin className="w-4 h-4" />
+                          <span className="truncate max-w-xs">7-11: {order["711"]}</span>
+                        </div>
+                      )}
+                      {/* 向後兼容：如果沒有配送方式但有配送地址，顯示原來的格式 */}
+                      {!order.delivery_method && order.shipping_address && (
                         <div className="flex items-center gap-2 text-sm text-gray-600">
                           <MapPin className="w-4 h-4" />
                           <span className="truncate max-w-xs">{order.shipping_address}</span>
@@ -758,43 +875,156 @@ function OrdersPageContent() {
                       )}
                     </div>
 
+                    {/* 展開的詳細訊息 - 只在待處理訂單且展開時顯示 */}
+                    {order.order_status === 'pending' && expandedOrder === order.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                            <Package className="w-4 h-4" />
+                            配送詳細資訊
+                          </h4>
+                          <div className="space-y-3">
+                            {/* 根據配送方式顯示不同資訊 */}
+                            {order.delivery_method === 'home' && (
+                              <div className="flex items-start gap-3">
+                                <div className="flex items-center gap-2 text-sm text-gray-600 min-w-0 flex-1">
+                                  <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  <div>
+                                    <div className="font-medium text-gray-800">宅配配送</div>
+                                    <div className="text-gray-600 mt-1">
+                                      {order.shipping_address || '未設定配送地址'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {order.delivery_method === '711' && (
+                              <div className="flex items-start gap-3">
+                                <div className="flex items-center gap-2 text-sm text-gray-600 min-w-0 flex-1">
+                                  <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                  <div>
+                                    <div className="font-medium text-gray-800">7-11超商配送</div>
+                                    <div className="text-gray-600 mt-1">
+                                      {order["711"] || '未設定門市'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {!order.delivery_method && (
+                              <div className="flex items-start gap-3">
+                                <div className="flex items-center gap-2 text-sm text-gray-600 min-w-0 flex-1">
+                                  <MapPin className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                  <div>
+                                    <div className="font-medium text-gray-800">配送資訊</div>
+                                    <div className="text-gray-600 mt-1">
+                                      {order.shipping_address || '未設定配送資訊'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* 訂單基本資訊 */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-gray-200">
+                              <div className="flex items-center gap-2 text-sm">
+                                <User className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-600">訂購人:</span>
+                                <span className="font-medium">{order.subscriber_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Mail className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-600">Email:</span>
+                                <span className="font-medium">{order.customer_email}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Calendar className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-600">訂單日期:</span>
+                                <span className="font-medium">
+                                  {order.created_at ? new Date(order.created_at).toLocaleDateString("zh-TW") : '無'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Package className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-600">訂單金額:</span>
+                                <span className="font-medium text-green-600">
+                                  {order.currency || 'NT$'} {(order.total_price || order.total_amount || 0).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 編輯狀態選單 */}
                     {editingOrder === order.id && (
                       <div className="mt-4 pt-4 border-t border-gray-200">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700">出貨狀態:</span>
-                            <select
-                              value={tempOrderStatus}
-                              onChange={(e) => setTempOrderStatus(e.target.value)}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm min-w-0 flex-1 sm:flex-none"
-                            >
-                              <option value="pending">🟫 待處理</option>
-                              <option value="processing">🔵 處理中</option>
-                              <option value="shipped">🟣 已出貨</option>
-                              <option value="delivered">🟢 已送達</option>
-                              <option value="cancelled">🔴 已取消</option>
-                            </select>
+                        <div className="space-y-4">
+                          {/* 第一行：出貨狀態 */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                              <span className="text-sm font-medium text-gray-700">出貨狀態:</span>
+                              <select
+                                value={tempOrderStatus}
+                                onChange={(e) => setTempOrderStatus(e.target.value)}
+                                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm min-w-0 flex-1 sm:flex-none"
+                              >
+                                <option value="pending">🟫 待處理</option>
+                                <option value="processing">🔵 處理中</option>
+                                <option value="shipped">🟣 已出貨</option>
+                                <option value="delivered">🟢 已送達</option>
+                                <option value="cancelled">🔴 已取消</option>
+                              </select>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => handleSaveStatus(order.id)}
-                              size="sm"
-                              className="bg-[#A69E8B] hover:bg-[#8A7B6C] text-white text-xs sm:text-sm"
-                            >
-                              儲存
-                            </Button>
-                            <Button
-                              onClick={handleCancelEdit}
-                              variant="outline"
-                              size="sm"
-                              className="text-xs sm:text-sm"
-                            >
-                              取消
-                            </Button>
+                          
+                          {/* 第二行：香水名稱和貨號 */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">香水名稱</label>
+                              <input
+                                type="text"
+                                value={tempPerfumeName}
+                                onChange={(e) => setTempPerfumeName(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
+                                placeholder="輸入香水名稱..."
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">貨號</label>
+                              <input
+                                type="text"
+                                value={tempShopifyOrderId}
+                                onChange={(e) => setTempShopifyOrderId(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
+                                placeholder="輸入貨號..."
+                              />
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-500 sm:ml-auto">
-                            最後更新: {order.updated_at ? new Date(order.updated_at).toLocaleString("zh-TW") : '無'}
+                          
+                          {/* 第三行：按鈕和時間 */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => handleSaveStatus(order.id)}
+                                size="sm"
+                                className="bg-[#A69E8B] hover:bg-[#8A7B6C] text-white text-xs sm:text-sm"
+                              >
+                                儲存
+                              </Button>
+                              <Button
+                                onClick={handleCancelEdit}
+                                variant="outline"
+                                size="sm"
+                                className="text-xs sm:text-sm"
+                              >
+                                取消
+                              </Button>
+                            </div>
+                            <div className="text-xs text-gray-500 sm:ml-auto">
+                              最後更新: {order.updated_at ? new Date(order.updated_at).toLocaleString("zh-TW") : '無'}
+                            </div>
                           </div>
                         </div>
                       </div>

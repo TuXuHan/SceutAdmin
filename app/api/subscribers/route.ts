@@ -80,93 +80,89 @@ export async function POST(request: NextRequest) {
 
       const subscribers = await subscribersResponse.json()
 
-      // 3. 同步資料
+      // 3. 同步資料 - 只更新現有的subscribers，不創建新的
       let syncedCount = 0
-      let createdCount = 0
+      let skippedCount = 0
       const errors: string[] = []
 
-      for (const profile of profiles) {
+      // 只處理現有的subscribers，從user_profiles更新他們的資料
+      for (const subscriber of subscribers) {
         try {
-          // 檢查是否已存在對應的 subscriber
-          const existingSubscriber = subscribers.find((sub: any) => 
-            sub.user_id === profile.id || sub.email === profile.email
+          // 找到對應的user_profile
+          const profile = profiles.find((prof: any) => 
+            prof.id === subscriber.user_id || prof.email === subscriber.email
           )
+          
+          if (!profile) {
+            skippedCount++
+            continue
+          }
 
-          if (existingSubscriber) {
-            // 更新現有的 subscriber
-            const updateData: any = {}
+          // 更新現有的 subscriber
+          const updateData: any = {}
             
-            if (profile.email && profile.email !== existingSubscriber.email) {
-              updateData.email = profile.email
-            }
-            if (profile.name && profile.name !== existingSubscriber.name) {
-              updateData.name = profile.name
-            }
-            if (profile.phone && profile.phone !== existingSubscriber.phone) {
-              updateData.phone = profile.phone
-            }
-            if (profile.user_id && profile.user_id !== existingSubscriber.user_id) {
-              updateData.user_id = profile.id
-            }
-            // 同步 quiz_answers
-            if (profile.quiz_answers && JSON.stringify(profile.quiz_answers) !== JSON.stringify(existingSubscriber.quiz_answers)) {
-              updateData.quiz_answers = profile.quiz_answers
-            }
+          // 不同步 email 欄位
+          // if (profile.email && profile.email !== subscriber.email) {
+          //   updateData.email = profile.email
+          // }
+          if (profile.name && profile.name !== subscriber.name) {
+            updateData.name = profile.name
+          }
+          if (profile.phone && profile.phone !== subscriber.phone) {
+            updateData.phone = profile.phone
+          }
+          if (profile.user_id && profile.user_id !== subscriber.user_id) {
+            updateData.user_id = profile.id
+          }
+          // 同步 quiz_answers
+          if (profile.quiz_answers && JSON.stringify(profile.quiz_answers) !== JSON.stringify(subscriber.quiz_answers)) {
+            updateData.quiz_answers = profile.quiz_answers
+          }
+          // 同步 delivery_method
+          if (profile.delivery_method && profile.delivery_method !== subscriber.delivery_method) {
+            updateData.delivery_method = profile.delivery_method
+          }
+          // 同步 711 門市資訊
+          if (profile["711"] && profile["711"] !== subscriber["711"]) {
+            updateData["711"] = profile["711"]
+          }
+          // 同步地址相關資訊
+          if (profile.address && profile.address !== subscriber.address) {
+            updateData.address = profile.address
+          }
+          if (profile.city && profile.city !== subscriber.city) {
+            updateData.city = profile.city
+          }
+          if (profile.postal_code && profile.postal_code !== subscriber.postal_code) {
+            updateData.postal_code = profile.postal_code
+          }
+          if (profile.country && profile.country !== subscriber.country) {
+            updateData.country = profile.country
+          }
 
-            if (Object.keys(updateData).length > 0) {
-              updateData.updated_at = new Date().toISOString()
+          if (Object.keys(updateData).length > 0) {
+            updateData.updated_at = new Date().toISOString()
 
-              const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?id=eq.${existingSubscriber.id}`, {
-                method: 'PATCH',
-                headers: {
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                  'Content-Type': 'application/json',
-                  'Prefer': 'return=representation'
-                },
-                body: JSON.stringify(updateData)
-              })
-
-              if (updateResponse.ok) {
-                syncedCount++
-              } else {
-                const errorText = await updateResponse.text()
-                errors.push(`更新 ${profile.email} 失敗: ${errorText}`)
-              }
-            }
-          } else {
-            // 創建新的 subscriber
-            const newSubscriber = {
-              user_id: profile.id,
-              email: profile.email,
-              name: profile.name,
-              phone: profile.phone,
-              quiz_answers: profile.quiz_answers,
-              subscription_status: 'inactive', // 默認為未啟用，需要實際訂閱才改為 active
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }
-
-            const createResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers`, {
-              method: 'POST',
+            const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?id=eq.${subscriber.id}`, {
+              method: 'PATCH',
               headers: {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                 'Content-Type': 'application/json',
                 'Prefer': 'return=representation'
               },
-              body: JSON.stringify(newSubscriber)
+              body: JSON.stringify(updateData)
             })
 
-            if (createResponse.ok) {
-              createdCount++
+            if (updateResponse.ok) {
+              syncedCount++
             } else {
-              const errorText = await createResponse.text()
-              errors.push(`創建 ${profile.email} 失敗: ${errorText}`)
+              const errorText = await updateResponse.text()
+              errors.push(`更新 ${subscriber.email} 失敗: ${errorText}`)
             }
           }
         } catch (err) {
-          errors.push(`處理 ${profile.email} 時發生錯誤: ${err instanceof Error ? err.message : String(err)}`)
+          errors.push(`處理 ${subscriber.email} 時發生錯誤: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
 
@@ -174,9 +170,9 @@ export async function POST(request: NextRequest) {
         success: true,
         message: `同步完成`,
         stats: {
-          totalProfiles: profiles.length,
+          totalSubscribers: subscribers.length,
           synced: syncedCount,
-          created: createdCount,
+          skipped: skippedCount,
           errors: errors.length
         },
         errors: errors.length > 0 ? errors : undefined
