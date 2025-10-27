@@ -92,6 +92,8 @@ function OrdersPageContent() {
   const [statusUpdateMessage, setStatusUpdateMessage] = useState<string | null>(null)
   const [autoGeneratingOrders, setAutoGeneratingOrders] = useState(false)
   const [autoOrderMessage, setAutoOrderMessage] = useState<string | null>(null)
+  const [completingOrders, setCompletingOrders] = useState(false)
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null)
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 500,
@@ -378,6 +380,51 @@ function OrdersPageContent() {
     }
   }
 
+  const handleCompletePendingOrders = async () => {
+    try {
+      setCompletingOrders(true)
+      setCompletionMessage("正在檢查待處理訂單完整性...")
+      
+      const response = await fetch('/api/complete-pending-orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        if (result.completedOrders > 0) {
+          setCompletionMessage(`✅ 成功補齊 ${result.completedOrders} 個待處理訂單的資訊${result.skippedOrders > 0 ? `，跳過 ${result.skippedOrders} 個已完整的訂單` : ''}`)
+        } else {
+          setCompletionMessage(`ℹ️ ${result.message}`)
+        }
+        
+        // 補齊成功後重新載入訂單列表
+        await loadOrders(true)
+        
+        // 5秒後清除訊息
+        setTimeout(() => {
+          setCompletionMessage(null)
+        }, 5000)
+      } else {
+        setCompletionMessage(`❌ 檢查訂單完整性失敗：${result.error || result.message}`)
+        setTimeout(() => {
+          setCompletionMessage(null)
+        }, 5000)
+      }
+    } catch (err) {
+      console.error("檢查訂單完整性錯誤:", err)
+      setCompletionMessage("❌ 檢查訂單完整性失敗，請稍後再試")
+      setTimeout(() => {
+        setCompletionMessage(null)
+      }, 5000)
+    } finally {
+      setCompletingOrders(false)
+    }
+  }
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case 'pending':
@@ -611,16 +658,18 @@ function OrdersPageContent() {
                 onClick={async () => {
                   // 先執行自動生成訂單
                   await handleAutoGenerateOrders()
-                  // 然後重新載入訂單列表
+                  // 然後檢查待處理訂單完整性
+                  await handleCompletePendingOrders()
+                  // 最後重新載入訂單列表
                   await loadOrders(true)
                 }}
-                disabled={autoGeneratingOrders}
+                disabled={autoGeneratingOrders || completingOrders}
                 className="flex items-center gap-2 text-sm"
                 size="sm"
               >
-                <RefreshCw className={`w-4 h-4 ${autoGeneratingOrders ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${(autoGeneratingOrders || completingOrders) ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">
-                  {autoGeneratingOrders ? '處理中...' : '重新整理'}
+                  {(autoGeneratingOrders || completingOrders) ? '處理中...' : '重新整理'}
                 </span>
               </Button>
             </div>
@@ -640,6 +689,15 @@ function OrdersPageContent() {
           <Alert className="mb-6 border-green-200 bg-green-50">
             <AlertDescription className="text-green-800">
               {autoOrderMessage}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* 訂單完整性檢查訊息 */}
+        {completionMessage && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50">
+            <AlertDescription className="text-blue-800">
+              {completionMessage}
             </AlertDescription>
           </Alert>
         )}
