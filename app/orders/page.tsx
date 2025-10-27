@@ -937,6 +937,13 @@ function OrdersPageContent() {
                                 <span className="text-gray-600">Email:</span>
                                 <span className="font-medium">{order.customer_email}</span>
                               </div>
+                              {order.customer_phone && (
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Phone className="w-4 h-4 text-gray-400" />
+                                  <span className="text-gray-600">電話:</span>
+                                  <span className="font-medium">{order.customer_phone}</span>
+                                </div>
+                              )}
                               <div className="flex items-center gap-2 text-sm">
                                 <Calendar className="w-4 h-4 text-gray-400" />
                                 <span className="text-gray-600">訂單日期:</span>
