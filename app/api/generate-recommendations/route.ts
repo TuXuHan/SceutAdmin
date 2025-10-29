@@ -52,7 +52,7 @@ ${perfumeDatabase}
 3. 替代推薦 (額外選擇，60-75%匹配度)
 
 對於每個推薦，請包含：
-- 香水名稱 (使用資料庫中的 Product Name)
+- 香水名稱及編號 (使用資料庫中的 Product Name 和 No.)
 - 匹配度百分比
 - 3個具體的推薦理由 (基於香調組成和用戶測驗答案)
 
@@ -60,6 +60,7 @@ ${perfumeDatabase}
 {
   "primary": {
     "name": "香水名稱",
+    "number": "編號",
     "brand": "品牌名稱", 
     "description": "詳細描述",
     "confidence": 匹配度數字,
