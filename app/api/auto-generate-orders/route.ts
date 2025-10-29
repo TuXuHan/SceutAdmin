@@ -82,8 +82,6 @@ export async function POST(request: NextRequest) {
       return isWithinRange
     })
     
-    console.log("📅 今天:", todayOnly.toLocaleDateString('zh-TW'), `(${todayOnly.toISOString()})`)
-    console.log("📅 10天後:", tenDaysLater.toLocaleDateString('zh-TW'), `(${tenDaysLater.toISOString()})`)
     console.log("📊 符合10天內付款條件的訂閱者數量:", subscribers.length)
     console.log("📊 符合條件的訂閱者:", JSON.stringify(subscribers.map((s: any) => ({ 
       name: s.name, 
