@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       shopifyOrderId = 'H' + Math.floor(1000000 + Math.random() * 9000000).toString()
     }
     
-    const orderWithTimestamps = {
+    const orderWithTimestamps: any = {
       id: randomUUID(),
       shopify_order_id: shopifyOrderId,
       customer_email: orderData.customer_email,
@@ -60,11 +60,15 @@ export async function POST(request: NextRequest) {
       perfume_name: orderData.perfume_name || null,
       delivery_method: orderData.delivery_method || null,
       "711": orderData["711"] || null,
-      shipping_address: orderData.shipping_address || null,
       created_at: now,
       updated_at: now,
       last_checked: now,
       ratings: null
+    }
+
+    // 只有當配送方式是宅配時才添加shipping_address
+    if (orderData.delivery_method === 'home' && orderData.shipping_address) {
+      orderWithTimestamps.shipping_address = orderData.shipping_address
     }
 
     const response = await fetch(`${supabaseUrl}/rest/v1/orders`, {
