@@ -94,7 +94,7 @@ function OrdersPageContent() {
   const [autoOrderMessage, setAutoOrderMessage] = useState<string | null>(null)
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
-    debounceMs: 500,
+    debounceMs: 60000, // 60 秒防抖
     maxRetries: 1
   })
 

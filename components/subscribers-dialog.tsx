@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff
 } from "lucide-react"
+import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 
 interface SubscribersDialogProps {
   open: boolean
@@ -28,17 +29,28 @@ interface SubscribersDialogProps {
 
 export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
   const [subscribers, setSubscribers] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedSubscriber, setExpandedSubscriber] = useState<string | null>(null)
   const [generatingRecommendations, setGeneratingRecommendations] = useState<string | null>(null)
   const [recommendations, setRecommendations] = useState<{[key: string]: any}>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  
+  // 使用與 UserHome 相同的防抖機制
+  const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
+    debounceMs: 60000, // 60 秒防抖
+    maxRetries: 1
+  })
 
-  const loadSubscribers = async () => {
+  const loadSubscribers = async (forceReload = false) => {
+    // 使用智能防抖機制
+    if (shouldSkipLoad(forceReload)) {
+      stopLoading()
+      return
+    }
+
     try {
-      setLoading(true)
+      startLoading()
       setError(null)
 
       const response = await fetch('/api/subscribers')
@@ -62,7 +74,7 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
       setError(errorMessage)
       setSubscribers([])
     } finally {
-      setLoading(false)
+      stopLoading()
     }
   }
 
@@ -159,9 +171,9 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
   }
 
   useEffect(() => {
-    if (open) {
-      loadSubscribers()
-    }
+    if (!open) return
+    resetLoadingState()
+    loadSubscribers()
   }, [open])
 
   if (!open) return null
@@ -190,7 +202,7 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => loadSubscribers()}
+              onClick={() => loadSubscribers(true)}
               disabled={loading}
               className="flex items-center gap-2"
             >
@@ -527,10 +539,15 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                                       {/* 香水資訊 */}
                                       <div className="space-y-3">
                                         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                          <div className={`font-bold text-xl ${config.textColor}`}>
+                                          <div className={`font-bold text-xl ${config.textColor} flex-1`}>
                                             {rec.name}
                                           </div>
-                                          <div className="text-sm text-gray-600 bg-white px-2 py-1 rounded-md border">
+                                          {rec.number && (
+                                            <div className="text-sm font-medium text-gray-600 bg-white px-2 py-1 rounded-md border flex-shrink-0">
+                                              No.{rec.number}
+                                            </div>
+                                          )}
+                                          <div className="text-sm text-gray-600 bg-white px-2 py-1 rounded-md border flex-shrink-0">
                                             {rec.brand}
                                           </div>
                                         </div>

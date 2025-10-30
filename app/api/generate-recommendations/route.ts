@@ -93,8 +93,19 @@ ${perfumeDatabase}
     }
 
     // 嘗試解析 JSON 回應
+    // OpenAI 可能會在回應中包裹 markdown 代碼塊，需要先清理
+    function extractJsonFromResponse(content: string): string {
+      let cleaned = content.trim()
+      // 移除開頭和結尾的 markdown 代碼塊標記
+      cleaned = cleaned.replace(/^```json\s*\n?/i, '')
+      cleaned = cleaned.replace(/^```\s*\n?/i, '')
+      cleaned = cleaned.replace(/\n?```\s*$/i, '')
+      return cleaned
+    }
+
     try {
-      const recommendations = JSON.parse(responseContent)
+      const cleanedContent = extractJsonFromResponse(responseContent)
+      const recommendations = JSON.parse(cleanedContent)
       return recommendations
     } catch (parseError) {
       console.error('解析 OpenAI 回應失敗:', parseError)
@@ -118,6 +129,7 @@ function getFallbackRecommendations() {
   return {
     primary: {
       name: "假清新柑橘調香水",
+      number: "No. 001",
       brand: "Le Labo",
       description: "根據您的測驗結果，這款清新柑橘調香水非常適合您的個性和偏好。",
       confidence: 85,
@@ -129,6 +141,7 @@ function getFallbackRecommendations() {
     },
     secondary: {
       name: "假木質調中性香水", 
+      number: "No. 002",
       brand: "Aesop",
       description: "如果您想嘗試不同風格，這款木質調香水會帶來溫暖沉穩的感覺。",
       confidence: 72,
@@ -140,6 +153,7 @@ function getFallbackRecommendations() {
     },
     alternative: {
       name: "假花香調香水",
+      number: "No. 003",
       brand: "Diptyque", 
       description: "溫柔的花香調，為您增添優雅氣質。",
       confidence: 68,
