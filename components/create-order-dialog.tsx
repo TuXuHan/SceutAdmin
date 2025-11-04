@@ -135,6 +135,7 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
         shopify_order_id: orderData.shopify_order_id,
         subscriber_name: orderData.subscriber_name,
         customer_email: orderData.customer_email,
+        customer_phone: orderData.customer_phone || null,
         total_price: parseFloat(orderData.total_price) || 0,
         currency: orderData.currency || 'TWD',
         order_status: orderData.order_status || 'pending',

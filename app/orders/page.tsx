@@ -93,6 +93,8 @@ function OrdersPageContent() {
   const [autoGeneratingOrders, setAutoGeneratingOrders] = useState(false)
   const [autoOrderMessage, setAutoOrderMessage] = useState<string | null>(null)
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
+  const [fillingPhones, setFillingPhones] = useState(false)
+  const [fillPhonesMessage, setFillPhonesMessage] = useState<string | null>(null)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 60000, // 60 秒防抖
     maxRetries: 1
@@ -333,7 +335,7 @@ function OrdersPageContent() {
     }
   }
 
-  const handleAutoGenerateOrders = async () => {
+  const handleAutoGenerateOrders = async (skipReload = false) => {
     try {
       setAutoGeneratingOrders(true)
       setAutoOrderMessage("正在檢查需要生成訂單的訂閱者...")
@@ -354,8 +356,10 @@ function OrdersPageContent() {
           setAutoOrderMessage(`ℹ️ ${result.message}`)
         }
         
-        // 生成成功後重新載入訂單列表
-        await loadOrders(true)
+        // 如果不需要跳過重新載入，則重新載入訂單列表
+        if (!skipReload) {
+          await loadOrders(true)
+        }
         
         // 5秒後清除訊息
         setTimeout(() => {
@@ -375,6 +379,53 @@ function OrdersPageContent() {
       }, 5000)
     } finally {
       setAutoGeneratingOrders(false)
+    }
+  }
+
+  const handleFillMissingPhones = async (skipReload = false) => {
+    try {
+      setFillingPhones(true)
+      setFillPhonesMessage("正在檢查缺少電話號碼的訂單...")
+      
+      const response = await fetch('/api/orders/fill-missing-phones', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        if (result.updated > 0) {
+          setFillPhonesMessage(`✅ ${result.message}${result.errors && result.errors.length > 0 ? ` (有 ${result.errors.length} 個錯誤)` : ''}`)
+        } else {
+          setFillPhonesMessage(`ℹ️ ${result.message}`)
+        }
+        
+        // 如果不需要跳過重新載入，則重新載入訂單列表
+        if (!skipReload) {
+          await loadOrders(true)
+        }
+        
+        // 5秒後清除訊息
+        setTimeout(() => {
+          setFillPhonesMessage(null)
+        }, 5000)
+      } else {
+        setFillPhonesMessage(`❌ 更新失敗：${result.error || result.message}`)
+        setTimeout(() => {
+          setFillPhonesMessage(null)
+        }, 5000)
+      }
+    } catch (err) {
+      console.error("填充電話號碼錯誤:", err)
+      setFillPhonesMessage("❌ 更新失敗，請稍後再試")
+      setTimeout(() => {
+        setFillPhonesMessage(null)
+      }, 5000)
+    } finally {
+      setFillingPhones(false)
     }
   }
 
@@ -593,7 +644,7 @@ function OrdersPageContent() {
               <h2 className="text-xl lg:text-2xl font-light text-gray-800 mb-2">訂單列表</h2>
               <p className="text-gray-600 text-sm lg:text-base">管理所有訂單和配送狀態</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button 
                 variant="outline" 
                 onClick={handleUpdate711Status}
@@ -609,18 +660,20 @@ function OrdersPageContent() {
               <Button 
                 variant="outline" 
                 onClick={async () => {
-                  // 先執行自動生成訂單
-                  await handleAutoGenerateOrders()
-                  // 然後重新載入訂單列表
+                  // 1. 先檢查並補充缺少電話號碼的訂單（跳過單獨重新載入）
+                  await handleFillMissingPhones(true)
+                  // 2. 然後執行自動生成訂單（跳過單獨重新載入）
+                  await handleAutoGenerateOrders(true)
+                  // 3. 最後統一重新載入訂單列表
                   await loadOrders(true)
                 }}
-                disabled={autoGeneratingOrders}
+                disabled={autoGeneratingOrders || fillingPhones}
                 className="flex items-center gap-2 text-sm"
                 size="sm"
               >
-                <RefreshCw className={`w-4 h-4 ${autoGeneratingOrders ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${(autoGeneratingOrders || fillingPhones) ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">
-                  {autoGeneratingOrders ? '處理中...' : '重新整理'}
+                  {(autoGeneratingOrders || fillingPhones) ? '檢查中...' : '重新整理'}
                 </span>
               </Button>
             </div>
@@ -640,6 +693,15 @@ function OrdersPageContent() {
           <Alert className="mb-6 border-green-200 bg-green-50">
             <AlertDescription className="text-green-800">
               {autoOrderMessage}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* 補充電話號碼訊息 */}
+        {fillPhonesMessage && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50">
+            <AlertDescription className="text-blue-800">
+              {fillPhonesMessage}
             </AlertDescription>
           </Alert>
         )}

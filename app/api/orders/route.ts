@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       id: randomUUID(),
       shopify_order_id: shopifyOrderId,
       customer_email: orderData.customer_email,
+      customer_phone: orderData.customer_phone || null,
       total_price: orderData.total_price,
       currency: orderData.currency || 'TWD',
       order_status: orderData.order_status || 'pending',
