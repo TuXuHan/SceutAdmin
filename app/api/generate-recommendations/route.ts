@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { fetchPerfumeInventory, type InventoryRow } from '@/lib/google-sheets'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 
@@ -14,25 +15,182 @@ if (process.env.OPENAI_API_KEY) {
   })
 }
 
+type IntroductionEntry = Record<string, any>
+
+function normalizeKey(value: string | null | undefined): string {
+  return value ? value.toString().toLowerCase().replace(/\s+/g, ' ').trim() : ''
+}
+
+function buildInventoryMap(rows: InventoryRow[]): Map<string, InventoryRow> {
+  const map = new Map<string, InventoryRow>()
+  rows
+    .filter((row) => row.product)
+    .forEach((row) => {
+      const key = normalizeKey(row.product)
+      if (key) {
+        map.set(key, row)
+      }
+    })
+  return map
+}
+
+function buildIntroductionContext(rawData: any, inventoryMap: Map<string, InventoryRow>) {
+  const entryMap = new Map<string, IntroductionEntry>()
+
+  if (!Array.isArray(rawData)) {
+    return {
+      filteredData: rawData,
+      entryMap,
+    }
+  }
+
+  const filteredData = rawData.map((table) => {
+    if (!table || !Array.isArray(table.data)) {
+      return table
+    }
+
+    const filteredRows = table.data.flatMap((item: IntroductionEntry) => {
+      const productName = item?.['Product Name']
+      const normalized = normalizeKey(productName)
+
+      if (!normalized) {
+        return []
+      }
+
+      const inventoryRow = inventoryMap.get(normalized)
+      if (inventoryRow && inventoryRow.unitsLeft <= 0) {
+        return []
+      }
+
+      const updated: IntroductionEntry = { ...item }
+
+      if (inventoryRow) {
+        updated['Units'] = String(inventoryRow.unitsLeft)
+        updated['Units Left'] = inventoryRow.unitsLeft
+      }
+
+      entryMap.set(normalized, updated)
+      return [updated]
+    })
+
+    return {
+      ...table,
+      data: filteredRows,
+    }
+  })
+
+  return {
+    filteredData,
+    entryMap,
+  }
+}
+
+function attachInventoryMetadata(recommendations: any, inventoryMap: Map<string, InventoryRow>) {
+  if (!recommendations || inventoryMap.size === 0) {
+    return recommendations
+  }
+
+  const result = { ...recommendations }
+  ;['primary', 'secondary', 'alternative'].forEach((key) => {
+    const recommendation = result[key]
+    if (!recommendation) {
+      return
+    }
+
+    const inventoryRow = inventoryMap.get(normalizeKey(recommendation.name))
+    if (inventoryRow) {
+      result[key] = {
+        ...recommendation,
+        unitsLeft: inventoryRow.unitsLeft,
+      }
+    }
+  })
+
+  return result
+}
+
+function getInventoryFallbackRecommendations(inventoryRows: InventoryRow[]) {
+  const available = inventoryRows.filter((row) => row.unitsLeft > 0)
+  if (available.length === 0) {
+    return null
+  }
+
+  const pick = available.slice(0, 3)
+  const confidences = [88, 74, 65]
+
+  const makeRecommendation = (row: InventoryRow, index: number) => ({
+    name: row.product,
+    number: '',
+    brand: row.brand || '精選香水',
+    description: `${row.product} 目前庫存剩餘 ${row.unitsLeft} 件，適合作為即時推薦。`,
+    confidence: confidences[index] ?? 60,
+    reasons: [
+      '庫存充足，可立即提供體驗。',
+      '香水資料庫中含有詳細介紹，可作為安全推薦。',
+      '符合近期庫存策略，避免推薦缺貨品項。',
+    ],
+  })
+
+  return {
+    primary: makeRecommendation(pick[0], 0),
+    secondary: pick[1] ? makeRecommendation(pick[1], 1) : null,
+    alternative: pick[2] ? makeRecommendation(pick[2], 2) : null,
+  }
+}
+
 /**
  * 使用 OpenAI 生成香水推薦
  */
 async function generatePerfumeRecommendations(quizAnswers: any) {
+  let inventoryRows: InventoryRow[] = []
+  let inventoryMap = new Map<string, InventoryRow>()
+
+  try {
+    inventoryRows = await fetchPerfumeInventory()
+    inventoryMap = buildInventoryMap(inventoryRows)
+    console.log('成功載入 Google Sheet 庫存資料，筆數:', inventoryRows.length)
+  } catch (inventoryError) {
+    console.error('讀取 Google Sheet 庫存資料失敗:', inventoryError)
+  }
+
   // 如果沒有 OpenAI API key，直接返回備用推薦
   if (!openai) {
     console.log('未設置 OpenAI API key，使用備用推薦')
-    return getFallbackRecommendations()
+    return getFallbackRecommendations(inventoryRows)
   }
 
   try {
     // 讀取香水資料庫
-    let perfumeDatabase = ''
+    let perfumeDatabase = '香水資料庫暫時不可用'
     try {
       const fs = require('fs')
       const path = require('path')
       const jsonPath = path.join(process.cwd(), 'introduction.json')
       const jsonData = fs.readFileSync(jsonPath, 'utf8')
       perfumeDatabase = jsonData
+
+      try {
+        const parsedIntroduction = JSON.parse(jsonData)
+        const { filteredData } = buildIntroductionContext(parsedIntroduction, inventoryMap)
+
+        if (Array.isArray(filteredData)) {
+          const totalEntries = filteredData.reduce((count: number, table: any) => {
+            if (!table || !Array.isArray(table.data)) {
+              return count
+            }
+            return count + table.data.length
+          }, 0)
+
+          if (totalEntries === 0) {
+            console.warn('香水資料庫中沒有可用庫存的品項，改用備用推薦')
+            return getFallbackRecommendations(inventoryRows)
+          }
+        }
+
+        perfumeDatabase = JSON.stringify(filteredData, null, 2)
+      } catch (parseError) {
+        console.error('解析香水資料庫 JSON 失敗，改用原始內容:', parseError)
+      }
     } catch (error) {
       console.log('無法讀取香水資料庫檔案:', error)
       perfumeDatabase = '香水資料庫暫時不可用'
@@ -106,26 +264,31 @@ ${perfumeDatabase}
     try {
       const cleanedContent = extractJsonFromResponse(responseContent)
       const recommendations = JSON.parse(cleanedContent)
-      return recommendations
+      return attachInventoryMetadata(recommendations, inventoryMap)
     } catch (parseError) {
       console.error('解析 OpenAI 回應失敗:', parseError)
       console.log('原始回應:', responseContent)
       
       // 如果解析失敗，返回備用推薦
-      return getFallbackRecommendations()
+      return getFallbackRecommendations(inventoryRows)
     }
 
   } catch (error) {
     console.error('OpenAI API 調用失敗:', error)
     // 返回備用推薦
-    return getFallbackRecommendations()
+    return getFallbackRecommendations(inventoryRows)
   }
 }
 
 /**
  * 備用推薦 (當 OpenAI API 失敗時使用)
  */
-function getFallbackRecommendations() {
+function getFallbackRecommendations(inventoryRows: InventoryRow[] = []) {
+  const inventoryFallback = getInventoryFallbackRecommendations(inventoryRows)
+  if (inventoryFallback) {
+    return inventoryFallback
+  }
+
   return {
     primary: {
       name: "假清新柑橘調香水",
