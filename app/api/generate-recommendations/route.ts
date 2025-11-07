@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { jsonrepair } from 'jsonrepair'
 import { fetchPerfumeInventory, type InventoryRow } from '@/lib/google-sheets'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
@@ -54,11 +55,20 @@ function buildIntroductionContext(rawData: any, inventoryMap: Map<string, Invent
       const normalized = normalizeKey(productName)
 
       if (!normalized) {
+        console.warn('跳過香水資料：缺少產品名稱', {
+          tableIndex: table.table_index ?? null,
+          brand: item?.['Brand Name'] ?? null,
+        })
         return []
       }
 
       const inventoryRow = inventoryMap.get(normalized)
       if (inventoryRow && inventoryRow.unitsLeft <= 0) {
+        console.log('篩選掉庫存為 0 的香水', {
+          productName,
+          brand: item?.['Brand Name'] ?? null,
+          unitsLeft: inventoryRow.unitsLeft,
+        })
         return []
       }
 
@@ -170,7 +180,8 @@ async function generatePerfumeRecommendations(quizAnswers: any) {
       perfumeDatabase = jsonData
 
       try {
-        const parsedIntroduction = JSON.parse(jsonData)
+        const repairedIntroduction = jsonrepair(jsonData)
+        const parsedIntroduction = JSON.parse(repairedIntroduction)
         const { filteredData } = buildIntroductionContext(parsedIntroduction, inventoryMap)
 
         if (Array.isArray(filteredData)) {
