@@ -5,4 +5,3 @@ ADD COLUMN IF NOT EXISTS ship_date TIMESTAMPTZ;
 UPDATE orders
 SET ship_date = COALESCE(ship_date, updated_at)
 WHERE order_status = 'shipped' AND ship_date IS NULL;
-
