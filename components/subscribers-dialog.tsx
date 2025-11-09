@@ -235,7 +235,7 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
       <div className="overflow-y-auto h-[calc(100vh-57px)]">
         <div className="max-w-7xl mx-auto p-4 lg:p-8">
           {/* 統計卡片 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <Card className="border-gray-200">
               <CardContent className="p-4">
                 <div className="text-3xl font-bold text-gray-800">{subscribers.length}</div>
@@ -245,17 +245,9 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
             <Card className="border-green-300 bg-green-50">
               <CardContent className="p-4">
                 <div className="text-3xl font-bold text-green-700">
-                  {subscribers.filter(s => s.subscription_status === 'active').length}
+                  {subscribers.filter(s => s.subscription_status?.toLowerCase() === 'active').length}
                 </div>
                 <p className="text-sm text-green-600">已訂閱</p>
-              </CardContent>
-            </Card>
-            <Card className="border-red-300 bg-red-50">
-              <CardContent className="p-4">
-                <div className="text-3xl font-bold text-red-700">
-                  {subscribers.filter(s => s.subscription_status === 'terminated').length}
-                </div>
-                <p className="text-sm text-red-600">已終止</p>
               </CardContent>
             </Card>
           </div>

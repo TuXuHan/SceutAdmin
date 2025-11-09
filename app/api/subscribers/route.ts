@@ -25,11 +25,19 @@ export async function GET(request: NextRequest) {
     }
 
     const subscribers = await subscribersResponse.json()
+    const filteredSubscribers = Array.isArray(subscribers)
+      ? subscribers.filter((subscriber: any) => {
+          const status = typeof subscriber?.subscription_status === 'string'
+            ? subscriber.subscription_status.toLowerCase()
+            : ''
+          return status !== 'terminate' && status !== 'terminated'
+        })
+      : []
 
     return NextResponse.json({ 
       success: true, 
-      subscribers,
-      count: subscribers.length
+      subscribers: filteredSubscribers,
+      count: filteredSubscribers.length
     })
 
   } catch (error) {

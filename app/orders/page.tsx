@@ -52,6 +52,7 @@ interface Order {
   ratings?: any
   created_at?: string
   updated_at?: string
+  ship_date?: string | null
 }
 
 interface OrderStats {
@@ -266,7 +267,12 @@ function OrdersPageContent() {
           setOrders(prevOrders => 
             prevOrders.map(order => 
               order.id === orderId 
-                ? { ...order, order_status: newStatus, updated_at: result.order.updated_at }
+                ? { 
+                    ...order, 
+                    order_status: newStatus, 
+                    updated_at: result.order.updated_at,
+                    ship_date: result.order.ship_date ?? order.ship_date 
+                  }
                 : order
             )
           )

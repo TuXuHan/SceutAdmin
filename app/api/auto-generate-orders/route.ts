@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log("🚀 開始自動生成訂單...")
     
-    // 計算10天後的日期
+    // 計算3天後的日期（包含今天）
     const now = new Date()
     const todayYear = now.getFullYear()
     const todayMonth = now.getMonth()
@@ -17,11 +17,11 @@ export async function POST(request: NextRequest) {
     const todayOnly = new Date(todayYear, todayMonth, todayDay)
     todayOnly.setHours(0, 0, 0, 0)
     
-    const tenDaysLater = new Date(todayOnly)
-    tenDaysLater.setDate(tenDaysLater.getDate() + 10)
+    const threeDaysLater = new Date(todayOnly)
+    threeDaysLater.setDate(threeDaysLater.getDate() + 3)
     
     console.log("📅 今天:", todayOnly.toLocaleDateString('zh-TW'), `(${todayOnly.toISOString()})`)
-    console.log("📅 10天後:", tenDaysLater.toLocaleDateString('zh-TW'), `(${tenDaysLater.toISOString()})`)
+    console.log("📅 3天後:", threeDaysLater.toLocaleDateString('zh-TW'), `(${threeDaysLater.toISOString()})`)
     
     // 獲取所有活躍訂閱者
     const allActiveSubscribersResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?select=*&subscription_status=eq.active`, {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       monthly_fee: s.monthly_fee
     })), null, 2))
     
-    // 在應用層面過濾出10天內要付款的訂閱者
+    // 在應用層面過濾出3天內要付款的訂閱者
     const subscribers = allActiveSubscribers.filter((subscriber: any) => {
       if (!subscriber.next_payment_date) {
         console.log(`⚠️ 訂閱者 ${subscriber.name} 沒有 next_payment_date`)
@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
       const paymentDateOnly = new Date(paymentYear, paymentMonth, paymentDay)
       paymentDateOnly.setHours(0, 0, 0, 0)
       
-      // 檢查是否在10天內（包括今天和10天後）
-      const isWithinRange = paymentDateOnly >= todayOnly && paymentDateOnly <= tenDaysLater
+      // 檢查是否在3天內（包括今天和3天後）
+      const isWithinRange = paymentDateOnly >= todayOnly && paymentDateOnly <= threeDaysLater
       
       // 詳細調試信息
       console.log(`🔍 檢查訂閱者: ${subscriber.name}`)
@@ -72,17 +72,17 @@ export async function POST(request: NextRequest) {
       console.log(`   解析後的付款日期: ${paymentDateOnly.toISOString()}`)
       console.log(`   本地日期: ${paymentDateOnly.toLocaleDateString('zh-TW')}`)
       console.log(`   今天: ${todayOnly.toLocaleDateString('zh-TW')}`)
-      console.log(`   10天後: ${tenDaysLater.toLocaleDateString('zh-TW')}`)
+      console.log(`   3天後: ${threeDaysLater.toLocaleDateString('zh-TW')}`)
       console.log(`   是否在範圍內: ${isWithinRange}`)
       
       if (isWithinRange) {
-        console.log(`✅ 找到10天內要付款的訂閱者: ${subscriber.name}, 付款日期: ${subscriber.next_payment_date}`)
+        console.log(`✅ 找到3天內要付款的訂閱者: ${subscriber.name}, 付款日期: ${subscriber.next_payment_date}`)
       }
       
       return isWithinRange
     })
     
-    console.log("📊 符合10天內付款條件的訂閱者數量:", subscribers.length)
+    console.log("📊 符合3天內付款條件的訂閱者數量:", subscribers.length)
     console.log("📊 符合條件的訂閱者:", JSON.stringify(subscribers.map((s: any) => ({ 
       name: s.name, 
       email: s.email, 
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     if (!subscribers || subscribers.length === 0) {
       return NextResponse.json({
         success: true,
-        message: '沒有10天內要付款的訂閱者需要生成訂單',
+        message: '沒有3天內要付款的訂閱者需要生成訂單',
         generatedOrders: 0,
         skippedOrders: 0,
         totalProcessed: 0

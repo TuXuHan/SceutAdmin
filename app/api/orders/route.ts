@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       shopifyOrderId = 'H' + Math.floor(1000000 + Math.random() * 9000000).toString()
     }
     
-    const orderWithTimestamps: any = {
+    const orderWithTimestamps: Record<string, any> = {
       id: randomUUID(),
       shopify_order_id: shopifyOrderId,
       customer_email: orderData.customer_email,
@@ -64,6 +64,12 @@ export async function POST(request: NextRequest) {
       updated_at: now,
       last_checked: now,
       ratings: null
+    }
+
+    if (orderData.ship_date) {
+      orderWithTimestamps.ship_date = new Date(orderData.ship_date).toISOString()
+    } else if ((orderWithTimestamps.order_status || '').toLowerCase() === 'shipped') {
+      orderWithTimestamps.ship_date = now
     }
 
     // 只有當配送方式是宅配時才添加shipping_address
@@ -117,9 +123,16 @@ export async function PUT(request: NextRequest) {
     }
 
     // 為更新添加 updated_at 時間戳
-    const orderWithTimestamp = {
+    const orderWithTimestamp: Record<string, any> = {
       ...updateData,
       updated_at: new Date().toISOString()
+    }
+
+    const hasShipDateField = Object.prototype.hasOwnProperty.call(updateData, 'ship_date')
+    if (!hasShipDateField && typeof updateData.order_status === 'string' && updateData.order_status.toLowerCase() === 'shipped') {
+      orderWithTimestamp.ship_date = new Date().toISOString()
+    } else if (hasShipDateField && updateData.ship_date) {
+      orderWithTimestamp.ship_date = new Date(updateData.ship_date).toISOString()
     }
 
     const response = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}`, {
