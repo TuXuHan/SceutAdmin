@@ -30,4 +30,3 @@ CREATE INDEX IF NOT EXISTS idx_partner_list_name ON public.partner_list(name);
 COMMENT ON TABLE public.partner_list IS '互惠對象名單表，用於存儲合作對象的資訊';
 COMMENT ON COLUMN public.partner_list.user_id IS '關聯到 user_profiles 的 user_id';
 COMMENT ON COLUMN public.partner_list.delivery_method IS '配送方式：home (宅配) 或 711 (7-11超商)';
-
