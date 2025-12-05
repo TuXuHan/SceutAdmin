@@ -25,11 +25,13 @@ import {
   Menu,
   X,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Truck
 } from "lucide-react"
 import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { SubscribersDialog } from "@/components/subscribers-dialog"
+import { PartnerShippingDialog } from "@/components/partner-shipping-dialog"
 
 interface Order {
   id: string
@@ -88,6 +90,7 @@ function OrdersPageContent() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showSubscribersDialog, setShowSubscribersDialog] = useState(false)
+  const [showPartnerShippingDialog, setShowPartnerShippingDialog] = useState(false)
   const [subscribersCount, setSubscribersCount] = useState(0)
   const [updating711Status, setUpdating711Status] = useState(false)
   const [statusUpdateMessage, setStatusUpdateMessage] = useState<string | null>(null)
@@ -612,6 +615,18 @@ function OrdersPageContent() {
               所有訂閱者 ({subscribersCount})
             </button>
             
+            {/* 合作對象出貨 */}
+            <button 
+              className="w-full text-left px-4 py-3 rounded-lg transition-colors bg-[#A69E8B] text-white hover:bg-[#8A7B6C] text-sm"
+              onClick={() => {
+                setShowPartnerShippingDialog(true)
+                setSidebarOpen(false)
+              }}
+            >
+              <Truck className="w-4 h-4 inline mr-3" />
+              合作對象出貨
+            </button>
+            
             {/* 分隔線 */}
             <div className="border-t border-gray-200 my-2"></div>
             
@@ -1129,6 +1144,14 @@ function OrdersPageContent() {
         onClose={() => {
           setShowSubscribersDialog(false)
           loadSubscribersCount() // 關閉時重新載入數量
+        }}
+      />
+
+      {/* 合作對象出貨對話框 */}
+      <PartnerShippingDialog
+        open={showPartnerShippingDialog}
+        onClose={() => {
+          setShowPartnerShippingDialog(false)
         }}
       />
     </div>
