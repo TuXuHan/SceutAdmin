@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { 
   User, 
   X, 
-  RefreshCw, 
+  RefreshCw,
   Search,
   Mail, 
   Phone, 
@@ -504,15 +504,25 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
                     </CardTitle>
                     <CardDescription>所有互惠對象的詳細資訊</CardDescription>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowPartnerList(!showPartnerList)
-                    }}
-                  >
-                    {showPartnerList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-[#A69E8B] hover:bg-[#8A7B6C] text-white"
+                      onClick={loadPartnerList}
+                      disabled={loadingPartnerList}
+                    >
+                      {loadingPartnerList ? '同步中...' : '同步資料'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowPartnerList(!showPartnerList)
+                      }}
+                    >
+                      {showPartnerList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               {showPartnerList && (
@@ -597,6 +607,12 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
                                 </span>
                               </div>
                             )}
+                            <div className="flex items-center gap-2">
+                              <Package className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <span className="text-gray-600 text-sm">
+                                訂閱月數: {partner.subscription_months ?? '未設定'}{partner.subscription_months ? ' 個月' : ''}
+                              </span>
+                            </div>
                           </div>
 
                           {/* 額外資訊 */}
@@ -615,6 +631,12 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
                               <div className="text-gray-600">
                                 <span className="font-medium">月費: </span>
                                 <span className="text-gray-800">NT$ {partner.monthly_fee}</span>
+                              </div>
+                            )}
+                            {partner.subscription_months !== undefined && partner.subscription_months !== null && (
+                              <div className="text-gray-600">
+                                <span className="font-medium">訂閱月數: </span>
+                                <span className="text-gray-800">{partner.subscription_months} 個月</span>
                               </div>
                             )}
                           </div>

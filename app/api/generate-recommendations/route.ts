@@ -151,9 +151,10 @@ function getInventoryFallbackRecommendations(inventoryRows: InventoryRow[]) {
 /**
  * 使用 OpenAI 生成香水推薦
  */
-async function generatePerfumeRecommendations(quizAnswers: any) {
+async function generatePerfumeRecommendations(quizAnswers: any, excludePerfumes: string[] = []) {
   let inventoryRows: InventoryRow[] = []
   let inventoryMap = new Map<string, InventoryRow>()
+  const excludeSet = new Set(excludePerfumes.map(normalizeKey).filter(Boolean))
 
   try {
     inventoryRows = await fetchPerfumeInventory()
@@ -207,6 +208,7 @@ async function generatePerfumeRecommendations(quizAnswers: any) {
       perfumeDatabase = '香水資料庫暫時不可用'
     }
 
+    const avoidList = excludePerfumes.filter(Boolean)
     const prompt = `作為一位專業的香水顧問，請根據以下用戶的測驗答案和香水資料庫，為他們推薦3款香水。
 
 用戶測驗答案：
@@ -214,6 +216,8 @@ ${JSON.stringify(quizAnswers, null, 2)}
 
 香水資料庫：
 ${perfumeDatabase}
+
+請完全避開曾經已經給過用戶的香水：${avoidList.length ? avoidList.join('、') : '無'}。
 
 請根據用戶的測驗答案，從香水資料庫中選擇最適合的香水進行推薦。加入 10–20% 的隨機性，讓每次結果不同，但不能違反使用者的核心偏好。請提供以下格式的推薦：
 1. 主要推薦 (最符合用戶偏好，85-95%匹配度)
@@ -275,7 +279,9 @@ ${perfumeDatabase}
     try {
       const cleanedContent = extractJsonFromResponse(responseContent)
       const recommendations = JSON.parse(cleanedContent)
-      return attachInventoryMetadata(recommendations, inventoryMap)
+      const withInventory = attachInventoryMetadata(recommendations, inventoryMap)
+      const filtered = filterOutUsedPerfumes(withInventory, excludeSet, inventoryRows)
+      return filtered
     } catch (parseError) {
       console.error('解析 OpenAI 回應失敗:', parseError)
       console.log('原始回應:', responseContent)
@@ -340,6 +346,30 @@ function getFallbackRecommendations(inventoryRows: InventoryRow[] = []) {
   }
 }
 
+function filterOutUsedPerfumes(recommendations: any, excludeSet: Set<string>, inventoryRows: InventoryRow[]) {
+  if (!recommendations || excludeSet.size === 0) return recommendations
+
+  const filtered: Record<string, any> = { ...recommendations }
+  const keys: Array<'primary' | 'secondary' | 'alternative'> = ['primary', 'secondary', 'alternative']
+
+  keys.forEach((key) => {
+    const rec = filtered[key]
+    if (rec && excludeSet.has(normalizeKey(rec.name))) {
+      console.log(`排除已給過的香水: ${rec.name}`)
+      filtered[key] = null
+    }
+  })
+
+  const hasRemaining = keys.some((key) => !!filtered[key])
+  if (hasRemaining) return filtered
+
+  const available = inventoryRows.filter(
+    (row) => row.unitsLeft > 0 && !excludeSet.has(normalizeKey(row.product)),
+  )
+  const fallback = getInventoryFallbackRecommendations(available)
+  return fallback || filtered
+}
+
 /**
  * 生成推薦
  * POST /api/generate-recommendations
@@ -358,8 +388,34 @@ export async function POST(request: NextRequest) {
 
     console.log(`為用戶 ${userId} 生成推薦...`)
 
+    // 取得此用戶已出過的香水，避免重複推薦
+    let usedPerfumes: string[] = []
+    try {
+      const historyResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/orders?select=perfume_name&user_id=eq.${userId}&perfume_name=not.is.null`,
+        {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      )
+
+      if (historyResponse.ok) {
+        const history = await historyResponse.json()
+        usedPerfumes = (history || [])
+          .map((item: any) => item?.perfume_name)
+          .filter(Boolean)
+      } else {
+        console.warn('讀取歷史香水失敗，仍繼續生成推薦')
+      }
+    } catch (historyError) {
+      console.warn('讀取歷史香水時發生錯誤，仍繼續生成推薦', historyError)
+    }
+
     // 使用 OpenAI 生成個人化推薦
-    const recommendations = await generatePerfumeRecommendations(quizAnswers)
+    const recommendations = await generatePerfumeRecommendations(quizAnswers, usedPerfumes)
 
     return NextResponse.json({
       success: true,

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.partner_list (
     quiz_answers JSONB, -- 問答答案
     subscription_status TEXT DEFAULT 'active', -- 訂閱狀態
     monthly_fee DECIMAL(10,2) DEFAULT 599, -- 月費
+    subscription_months INTEGER, -- 訂閱月數
     payment_method TEXT DEFAULT 'CREDIT', -- 付款方式
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -30,4 +31,6 @@ CREATE INDEX IF NOT EXISTS idx_partner_list_name ON public.partner_list(name);
 COMMENT ON TABLE public.partner_list IS '互惠對象名單表，用於存儲合作對象的資訊';
 COMMENT ON COLUMN public.partner_list.user_id IS '關聯到 user_profiles 的 user_id';
 COMMENT ON COLUMN public.partner_list.delivery_method IS '配送方式：home (宅配) 或 711 (7-11超商)';
+COMMENT ON COLUMN public.partner_list.subscription_months IS '累計或方案的訂閱月數';
+
 

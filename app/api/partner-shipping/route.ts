@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { action, userId } = body
 
-    if (action === 'add-to-subscribers') {
+    if (action === 'add-to-subscribers' || action === 'sync-from-profile') {
       if (!userId) {
         return NextResponse.json(
           { success: false, error: '缺少必要參數：userId' },
@@ -152,7 +152,13 @@ export async function POST(request: NextRequest) {
           postal_code: profile.postal_code || null,
           country: profile.country || '台灣',
           quiz_answers: profile.quiz_answers || null,
+          subscription_status: 'active',
+          monthly_fee: profile.monthly_fee || 599,
+          payment_method: profile.payment_method || 'CREDIT',
           updated_at: new Date().toISOString()
+        }
+        if ((profile as any)?.subscription_months !== undefined && (profile as any)?.subscription_months !== null) {
+          updateData.subscription_months = (profile as any).subscription_months
         }
 
         const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/partner_list?id=eq.${partnerId}`, {
@@ -174,7 +180,7 @@ export async function POST(request: NextRequest) {
         const updatedPartner = await updateResponse.json()
         return NextResponse.json({
           success: true,
-          message: '用戶已更新到互惠對象名單',
+          message: action === 'sync-from-profile' ? '已同步用戶資料到互惠對象' : '用戶已更新到互惠對象名單',
           partner: Array.isArray(updatedPartner) ? updatedPartner[0] : updatedPartner
         })
       } else {
@@ -195,10 +201,13 @@ export async function POST(request: NextRequest) {
           country: profile.country || '台灣',
           quiz_answers: profile.quiz_answers || null,
           subscription_status: 'active', // 預設為活躍狀態
-          monthly_fee: 599, // 預設月費（數字類型）
-          payment_method: 'CREDIT',
+          monthly_fee: profile.monthly_fee || 599, // 預設月費（數字類型）
+          payment_method: profile.payment_method || 'CREDIT',
           created_at: now,
           updated_at: now
+        }
+        if ((profile as any)?.subscription_months !== undefined && (profile as any)?.subscription_months !== null) {
+          newPartner.subscription_months = (profile as any).subscription_months
         }
 
         const createResponse = await fetch(`${SUPABASE_URL}/rest/v1/partner_list`, {
@@ -220,10 +229,110 @@ export async function POST(request: NextRequest) {
         const createdPartner = await createResponse.json()
         return NextResponse.json({
           success: true,
-          message: '用戶已加入互惠對象名單',
+          message: action === 'sync-from-profile' ? '已同步用戶資料並建立互惠對象' : '用戶已加入互惠對象名單',
           partner: Array.isArray(createdPartner) ? createdPartner[0] : createdPartner
         })
       }
+    }
+
+    if (action === 'sync-all-from-profiles') {
+      // 批次同步 partner_list 對應的 user_profiles
+      const partnerResponse = await fetch(`${SUPABASE_URL}/rest/v1/partner_list?select=id,user_id,email`, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!partnerResponse.ok) {
+        const errorText = await partnerResponse.text()
+        throw new Error(`讀取互惠對象名單失敗: ${errorText}`)
+      }
+
+      const partners = await partnerResponse.json()
+      let updated = 0
+      let skipped = 0
+      let failed = 0
+
+      for (const partner of partners || []) {
+        const uid = partner?.user_id
+        if (!uid) {
+          skipped++
+          continue
+        }
+
+        try {
+          const profileResp = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${uid}&select=*`, {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (!profileResp.ok) {
+            failed++
+            continue
+          }
+
+          const profiles = await profileResp.json()
+          if (!profiles || profiles.length === 0) {
+            skipped++
+            continue
+          }
+
+          const profile = profiles[0]
+          const updateData: any = {
+            name: profile.name || '',
+            email: profile.email || '',
+            phone: profile.phone || null,
+            user_id: profile.id,
+            delivery_method: profile.delivery_method || null,
+            "711": profile["711"] || null,
+            address: profile.address || null,
+            city: profile.city || null,
+            postal_code: profile.postal_code || null,
+            country: profile.country || '台灣',
+            quiz_answers: profile.quiz_answers || null,
+            subscription_status: 'active',
+            monthly_fee: profile.monthly_fee || 599,
+            payment_method: profile.payment_method || 'CREDIT',
+            updated_at: new Date().toISOString()
+          }
+          if ((profile as any)?.subscription_months !== undefined && (profile as any)?.subscription_months !== null) {
+            updateData.subscription_months = (profile as any).subscription_months
+          }
+
+          const updateResp = await fetch(`${SUPABASE_URL}/rest/v1/partner_list?id=eq.${partner.id}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(updateData)
+          })
+
+          if (updateResp.ok) {
+            updated++
+          } else {
+            failed++
+          }
+        } catch (err) {
+          console.error('批次同步單筆失敗:', err)
+          failed++
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `同步完成。更新 ${updated} 筆，略過 ${skipped} 筆，失敗 ${failed} 筆。`,
+        updated,
+        skipped,
+        failed
+      })
     }
 
     return NextResponse.json(
