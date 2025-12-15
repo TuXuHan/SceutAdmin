@@ -32,5 +32,3 @@ COMMENT ON TABLE public.partner_list IS '互惠對象名單表，用於存儲合
 COMMENT ON COLUMN public.partner_list.user_id IS '關聯到 user_profiles 的 user_id';
 COMMENT ON COLUMN public.partner_list.delivery_method IS '配送方式：home (宅配) 或 711 (7-11超商)';
 COMMENT ON COLUMN public.partner_list.subscription_months IS '累計或方案的訂閱月數';
-
-

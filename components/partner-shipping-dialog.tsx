@@ -1219,4 +1219,3 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
     </div>
   )
 }
-
