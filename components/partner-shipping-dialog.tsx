@@ -117,17 +117,24 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
   const loadPartnerList = async () => {
     try {
       setLoadingPartnerList(true)
-      const response = await fetch('/api/partner-list')
+      // 加上 timestamp 避免快取
+      const response = await fetch(`/api/partner-list?t=${Date.now()}`, {
+        cache: 'no-store',
+      })
       
       if (response.ok) {
         const data = await response.json()
+        console.log('載入的互惠對象資料:', data)
         if (data.partners && Array.isArray(data.partners)) {
           setPartnerList(data.partners)
+          console.log(`成功載入 ${data.partners.length} 個互惠對象`)
         } else {
+          console.warn('API 返回的資料格式不正確:', data)
           setPartnerList([])
         }
       } else {
-        console.error("載入互惠對象名單失敗:", response.status)
+        const errorText = await response.text()
+        console.error("載入互惠對象名單失敗:", response.status, errorText)
         setPartnerList([])
       }
     } catch (err) {

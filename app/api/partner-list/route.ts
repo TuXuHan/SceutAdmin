@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
         Authorization: `Bearer ${SUPABASE_KEY}`,
         "Content-Type": "application/json",
       },
+      cache: 'no-store', // 避免快取
     })
 
     if (!response.ok) {
