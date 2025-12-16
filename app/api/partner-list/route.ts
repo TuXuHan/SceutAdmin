@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+export const dynamic = "force-dynamic"
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -9,8 +11,7 @@ const SUPABASE_KEY =
 // GET - 獲取互惠對象名單
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const search = searchParams.get("search")
+    const search = request.nextUrl.searchParams.get("search")
 
     // 從 partner_list 表獲取資料
     let query = `${SUPABASE_URL}/rest/v1/partner_list?select=*&order=created_at.desc`
