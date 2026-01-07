@@ -46,22 +46,22 @@
 ## API 端點
 
 ### 生成推薦 API
-\`\`\`
+```
 POST /api/generate-recommendations
-\`\`\`
+```
 
 請求參數：
-\`\`\`json
+```json
 {
   "userId": "用戶ID",
   "quizAnswers": {
     "測驗答案對象"
   }
 }
-\`\`\`
+```
 
 回應格式：
-\`\`\`json
+```json
 {
   "success": true,
   "recommendations": {
@@ -78,7 +78,7 @@ POST /api/generate-recommendations
   "generatedAt": "生成時間",
   "message": "推薦生成成功"
 }
-\`\`\`
+```
 
 ## 技術實現
 

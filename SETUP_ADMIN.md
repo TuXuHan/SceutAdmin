@@ -20,29 +20,29 @@
 3. **設置環境變量**
    
    **方法 1: 創建 `.env.local` 文件**
-   \`\`\`bash
+   ```bash
    cd /Users/SummerTu/Desktop/Sceut/Admin
    cp env.example .env.local
-   \`\`\`
+   ```
    
    編輯 `.env.local` 文件，添加：
-   \`\`\`env
+   ```env
    NEXT_PUBLIC_SUPABASE_URL=https://bbrnbyzjmxgxnczzymdt.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y
    SUPABASE_SERVICE_ROLE_KEY=你的_service_role_key_在這裡
-   \`\`\`
+   ```
 
    **方法 2: 直接在終端設置（臨時）**
-   \`\`\`bash
+   ```bash
    export SUPABASE_SERVICE_ROLE_KEY="你的_service_role_key_在這裡"
-   \`\`\`
+   ```
 
 4. **重啟開發伺服器**
-   \`\`\`bash
+   ```bash
    npm run dev
    # 或
    yarn dev
-   \`\`\`
+   ```
 
 ## ⚠️ 安全提醒
 
@@ -57,9 +57,9 @@
 
 1. 點擊左側導航的 "查看所有訂閱者"
 2. 檢查終端日誌，應該看到：
-   \`\`\`
+   ```
    🔑 使用的 Key 类型: SERVICE_ROLE_KEY
-   \`\`\`
+   ```
 3. 如果看到 `ANON_KEY`，表示環境變量未正確設置
 
 ## 功能說明
