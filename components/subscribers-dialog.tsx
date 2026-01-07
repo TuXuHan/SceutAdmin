@@ -30,6 +30,7 @@ interface SubscribersDialogProps {
 export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
   const [subscribers, setSubscribers] = useState<any[]>([])
   const [syncLoading, setSyncLoading] = useState(false)
+  const [recalculateLoading, setRecalculateLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedSubscriber, setExpandedSubscriber] = useState<string | null>(null)
   const [generatingRecommendations, setGeneratingRecommendations] = useState<string | null>(null)
@@ -75,6 +76,39 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
       setSubscribers([])
     } finally {
       stopLoading()
+    }
+  }
+
+  const recalculatePaymentSchedule = async () => {
+    try {
+      setRecalculateLoading(true)
+      setError(null)
+      setSuccessMessage(null)
+
+      const response = await fetch('/api/recalculate-payments', {
+        method: 'POST',
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setSuccessMessage(
+            `✅ 扣款排程重新計算完成！更新了 ${data.results.updated} 筆訂閱記錄` +
+            (data.results.completed > 0 ? `，${data.results.completed} 筆已完成` : '')
+          )
+          // 重新載入訂閱者資料
+          await loadSubscribers(true)
+        } else {
+          setError(data.error || '重新計算失敗')
+        }
+      } else {
+        setError('重新計算扣款排程失敗')
+      }
+    } catch (err) {
+      console.error('重新計算扣款排程錯誤:', err)
+      setError(err instanceof Error ? err.message : '重新計算扣款排程失敗')
+    } finally {
+      setRecalculateLoading(false)
     }
   }
 
@@ -199,6 +233,17 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => recalculatePaymentSchedule()}
+              disabled={recalculateLoading}
+              className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+            >
+              <Calendar className={`w-4 h-4 ${recalculateLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{recalculateLoading ? '計算中...' : '重新計算扣款'}</span>
+              <span className="sm:hidden">計算</span>
+            </Button>
             <Button 
               variant="outline" 
               size="sm"
@@ -251,6 +296,15 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
               </CardContent>
             </Card>
           </div>
+
+          {successMessage && (
+            <Alert className="mb-6 border-green-200 bg-green-50">
+              <AlertCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                {successMessage}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {error && (
             <Alert className="mb-6 border-red-200 bg-red-50">
