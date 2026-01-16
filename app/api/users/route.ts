@@ -35,8 +35,18 @@ export async function GET(request: NextRequest) {
 
     const subscribers = await response.json()
 
+    // 過濾出 active 的訂閱者
+    const activeSubscribers = Array.isArray(subscribers)
+      ? subscribers.filter((subscriber: any) => {
+          const status = typeof subscriber?.subscription_status === 'string'
+            ? subscriber.subscription_status.toLowerCase()
+            : ''
+          return status === 'active'
+        })
+      : []
+
     // 將 subscribers 資料轉換為與原 user_profiles 相容的格式
-    const users = subscribers.map((subscriber: any) => ({
+    const users = activeSubscribers.map((subscriber: any) => ({
       id: subscriber.user_id || subscriber.id,
       name: subscriber.name || "",
       email: subscriber.email || "",
@@ -50,7 +60,7 @@ export async function GET(request: NextRequest) {
       created_at: subscriber.created_at || new Date().toISOString(),
       updated_at: subscriber.updated_at || new Date().toISOString(),
       // 添加訂閱相關資訊
-      subscription_status: subscriber.subscription_status || "inactive",
+      subscription_status: subscriber.subscription_status || "active",
       monthly_fee: subscriber.monthly_fee || "599",
       next_payment_date: subscriber.next_payment_date || null,
     }))

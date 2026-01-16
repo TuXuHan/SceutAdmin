@@ -24,7 +24,8 @@ import {
   Save,
   Truck,
   Package,
-  UserPlus
+  UserPlus,
+  MapPin
 } from "lucide-react"
 import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 
@@ -631,6 +632,15 @@ export function PartnerShippingDialog({ open, onClose }: PartnerShippingDialogPr
                                   {partner.delivery_method === 'home' ? '宅配' : 
                                    partner.delivery_method === '711' ? '7-11超商' : 
                                    partner.delivery_method}
+                                </span>
+                              </div>
+                            )}
+                            {partner.delivery_method === '711' && partner["711"] && (
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-600">
+                                  <span className="font-medium">7-11門市: </span>
+                                  <span className="text-gray-800">{partner["711"]}</span>
                                 </span>
                               </div>
                             )}

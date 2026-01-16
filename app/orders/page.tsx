@@ -64,6 +64,7 @@ interface OrderStats {
   shipped: number
   delivered: number
   cancelled: number
+  partner: number
 }
 
 function OrdersPageContent() {
@@ -77,8 +78,10 @@ function OrdersPageContent() {
     processing: 0,
     shipped: 0,
     delivered: 0,
-    cancelled: 0
+    cancelled: 0,
+    partner: 0
   })
+  const [partnerList, setPartnerList] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isDatabaseConfigured, setIsDatabaseConfigured] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -104,6 +107,30 @@ function OrdersPageContent() {
     maxRetries: 1
   })
 
+  // 載入合作對象列表
+  const loadPartnerList = async () => {
+    try {
+      const response = await fetch('/api/partner-list')
+      if (response.ok) {
+        const data = await response.json()
+        setPartnerList(data.partners || [])
+      }
+    } catch (err) {
+      console.error("載入合作對象列表失敗:", err)
+    }
+  }
+
+  // 檢查訂單是否為合作對象訂單
+  const isPartnerOrder = (order: Order): boolean => {
+    if (!order.subscriber_name || partnerList.length === 0) {
+      return false
+    }
+    return partnerList.some(partner => 
+      partner.name === order.subscriber_name || 
+      partner.email === order.customer_email
+    )
+  }
+
   // 計算各個order_status的函式
   const calculateOrderStats = (orders: Order[]): OrderStats => {
     return {
@@ -112,7 +139,8 @@ function OrdersPageContent() {
       processing: orders.filter(order => order.order_status === 'processing').length,
       shipped: orders.filter(order => order.order_status === 'shipped' || order.order_status === 'shippped').length,
       delivered: orders.filter(order => order.order_status === 'delivered').length,
-      cancelled: orders.filter(order => order.order_status === 'cancelled').length
+      cancelled: orders.filter(order => order.order_status === 'cancelled').length,
+      partner: orders.filter(order => isPartnerOrder(order)).length
     }
   }
 
@@ -140,10 +168,6 @@ function OrdersPageContent() {
       if (response.ok) {
         const data = await response.json()
         setOrders(data || [])
-        setFilteredOrders(data || [])
-        
-        const newStats = calculateOrderStats(data || [])
-        setStats(newStats)
       } else {
         const errorText = await response.text()
         console.error("載入訂單失敗:", response.status, errorText)
@@ -178,12 +202,21 @@ function OrdersPageContent() {
       })
     }
 
-    if (statusFilter !== "all") {
+    if (statusFilter === "partner") {
+      // 過濾合作對象訂單
+      filtered = filtered.filter(order => isPartnerOrder(order))
+    } else if (statusFilter !== "all") {
       filtered = filtered.filter(order => order.order_status === statusFilter)
     }
 
     setFilteredOrders(filtered)
-  }, [orders, searchTerm, statusFilter])
+  }, [orders, searchTerm, statusFilter, partnerList])
+
+  // 當訂單或合作對象列表更新時，重新計算統計數據
+  useEffect(() => {
+    const newStats = calculateOrderStats(orders)
+    setStats(newStats)
+  }, [orders, partnerList])
 
   // 暫時移除認證檢查，直接顯示訂單管理頁面
   // useEffect(() => {
@@ -199,6 +232,8 @@ function OrdersPageContent() {
     loadOrders()
     // 載入訂閱者數量
     loadSubscribersCount()
+    // 載入合作對象列表
+    loadPartnerList()
   }, [])
 
   const loadSubscribersCount = async () => {
@@ -598,6 +633,20 @@ function OrdersPageContent() {
             >
               <Package className="w-4 h-4 inline mr-3" />
               待處理訂單 ({stats.pending})
+            </button>
+            <button 
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
+                statusFilter === "partner" 
+                  ? "bg-[#A69E8B] text-white" 
+                  : "text-gray-700 hover:bg-gray-100 border-l-4 border-orange-300"
+              }`}
+              onClick={() => {
+                setStatusFilter("partner")
+                setSidebarOpen(false)
+              }}
+            >
+              <Truck className="w-4 h-4 inline mr-3" />
+              合作對象訂單 ({stats.partner})
             </button>
             
             {/* 分隔線 */}

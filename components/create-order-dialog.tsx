@@ -26,6 +26,8 @@ interface UserProfile {
   subscription_status?: string
   monthly_fee?: string
   next_payment_date?: string
+  // 標記是否為合作對象
+  isPartner?: boolean
 }
 
 interface CreateOrderDialogProps {
@@ -36,6 +38,7 @@ interface CreateOrderDialogProps {
 
 export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: CreateOrderDialogProps) {
   const [users, setUsers] = useState<UserProfile[]>([])
+  const [partners, setPartners] = useState<UserProfile[]>([])
   const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>([])
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -60,7 +63,7 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
     notes: ""
   })
 
-  // 載入用戶列表
+  // 載入用戶列表（訂閱者）
   const loadUsers = async (search: string = "") => {
     try {
       setLoading(true)
@@ -68,28 +71,90 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
       const result = await response.json()
       
       if (result.success) {
-        setUsers(result.users)
-        setFilteredUsers(result.users)
+        // 標記為訂閱者
+        const subscribers = result.users.map((user: UserProfile) => ({
+          ...user,
+          isPartner: false
+        }))
+        setUsers(subscribers)
       }
     } catch (error) {
-      console.error('載入用戶失敗:', error)
+      console.error('載入訂閱者失敗:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  // 搜尋用戶
+  // 載入合作對象列表
+  const loadPartners = async (search: string = "") => {
+    try {
+      const response = await fetch(`/api/partner-list${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+      const result = await response.json()
+      
+      if (result.success) {
+        // 將合作對象轉換為與 UserProfile 相容的格式
+        const partnerProfiles = result.partners.map((partner: any) => ({
+          id: partner.user_id || partner.id,
+          name: partner.name || "",
+          email: partner.email || "",
+          phone: partner.phone || "",
+          address: partner.address || "",
+          city: partner.city || "",
+          postal_code: partner.postal_code || "",
+          country: partner.country || "",
+          "711": partner["711"] || "",
+          delivery_method: partner.delivery_method || "",
+          created_at: partner.created_at || new Date().toISOString(),
+          updated_at: partner.updated_at || new Date().toISOString(),
+          subscription_status: partner.subscription_status || "active",
+          monthly_fee: partner.monthly_fee || "599",
+          next_payment_date: partner.next_payment_date || null,
+          isPartner: true
+        }))
+        setPartners(partnerProfiles)
+      }
+    } catch (error) {
+      console.error('載入合作對象失敗:', error)
+    }
+  }
+
+  // 載入所有用戶（訂閱者 + 合作對象）
+  const loadAllUsers = async (search: string = "") => {
+    await Promise.all([
+      loadUsers(search),
+      loadPartners(search)
+    ])
+  }
+
+  // 當 searchTerm 改變時，從 API 搜索（防抖處理）
   useEffect(() => {
     if (searchTerm.length > 0) {
-      const filtered = users.filter(user => 
+      const searchTimeout = setTimeout(() => {
+        loadAllUsers(searchTerm)
+      }, 300) // 防抖處理
+      
+      return () => clearTimeout(searchTimeout)
+    } else {
+      // 沒有搜索詞時，重新載入所有用戶
+      loadAllUsers()
+    }
+  }, [searchTerm])
+
+  // 當 users 或 partners 更新時，更新過濾列表
+  useEffect(() => {
+    const allUsers = [...users, ...partners]
+    if (searchTerm.length === 0) {
+      // 沒有搜索詞時，顯示所有用戶
+      setFilteredUsers(allUsers)
+    } else {
+      // 如果有搜索詞，在前端也進行過濾（API 已經過濾，這裡作為雙重保障）
+      const filtered = allUsers.filter(user => 
         user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email.toLowerCase().includes(searchTerm.toLowerCase())
       )
       setFilteredUsers(filtered)
-    } else {
-      setFilteredUsers(users)
     }
-  }, [searchTerm, users])
+  }, [users, partners, searchTerm])
 
   // 選擇用戶
   const selectUser = (user: UserProfile) => {
@@ -185,10 +250,10 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
     }
   }
 
-  // 當對話框打開時載入用戶
+  // 當對話框打開時載入用戶（訂閱者 + 合作對象）
   useEffect(() => {
     if (open) {
-      loadUsers()
+      loadAllUsers()
     }
   }, [open])
 
@@ -206,13 +271,13 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
           {/* 用戶選擇區域 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">選擇訂閱者</CardTitle>
+              <CardTitle className="text-lg">選擇訂閱者或合作對象</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  placeholder="搜尋訂閱者姓名或Email..."
+                  placeholder="搜尋訂閱者或合作對象姓名或Email..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value)
@@ -249,7 +314,14 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <div className="font-medium">{user.name}</div>
-                              {user.subscription_status && (
+                              {user.isPartner ? (
+                                <Badge 
+                                  variant="default"
+                                  className="text-xs bg-blue-100 text-blue-800 border-blue-300"
+                                >
+                                  合作對象
+                                </Badge>
+                              ) : user.subscription_status && (
                                 <Badge 
                                   variant={user.subscription_status === 'active' ? 'default' : 'secondary'}
                                   className={`text-xs ${
@@ -277,18 +349,31 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                       </div>
                     ))
                   ) : (
-                    <div className="p-4 text-center text-gray-500">沒有找到訂閱者</div>
+                    <div className="p-4 text-center text-gray-500">沒有找到訂閱者或合作對象</div>
                   )}
                 </div>
               )}
 
               {/* 已選擇的用戶 */}
               {selectedUser && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className={`p-4 border rounded-lg ${
+                  selectedUser.isPartner 
+                    ? 'bg-blue-50 border-blue-200' 
+                    : 'bg-green-50 border-green-200'
+                }`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <User className="w-4 h-4 text-green-600" />
-                    <span className="font-medium text-green-800">已選擇訂閱者</span>
-                    {selectedUser.subscription_status && (
+                    <User className={`w-4 h-4 ${selectedUser.isPartner ? 'text-blue-600' : 'text-green-600'}`} />
+                    <span className={`font-medium ${selectedUser.isPartner ? 'text-blue-800' : 'text-green-800'}`}>
+                      {selectedUser.isPartner ? '已選擇合作對象' : '已選擇訂閱者'}
+                    </span>
+                    {selectedUser.isPartner ? (
+                      <Badge 
+                        variant="default"
+                        className="text-xs bg-blue-100 text-blue-800 border-blue-300"
+                      >
+                        合作對象
+                      </Badge>
+                    ) : selectedUser.subscription_status && (
                       <Badge 
                         variant={selectedUser.subscription_status === 'active' ? 'default' : 'secondary'}
                         className={`text-xs ${
@@ -301,7 +386,9 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                       </Badge>
                     )}
                   </div>
-                  <div className="text-sm text-green-700 space-y-1">
+                  <div className={`text-sm space-y-1 ${
+                    selectedUser.isPartner ? 'text-blue-700' : 'text-green-700'
+                  }`}>
                     <div>姓名: {selectedUser.name}</div>
                     <div>Email: {selectedUser.email}</div>
                     {selectedUser.phone && <div>電話: {selectedUser.phone}</div>}
