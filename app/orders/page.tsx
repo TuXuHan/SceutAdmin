@@ -49,6 +49,7 @@ interface Order {
   payment_status?: string
   shipping_status?: string
   notes?: string
+  cancellation_note?: string
   user_id?: string
   perfume_name?: string
   ratings?: any
@@ -90,6 +91,7 @@ function OrdersPageContent() {
   const [tempOrderStatus, setTempOrderStatus] = useState<string>("")
   const [tempPerfumeName, setTempPerfumeName] = useState<string>("")
   const [tempShopifyOrderId, setTempShopifyOrderId] = useState<string>("")
+  const [tempCancellationNote, setTempCancellationNote] = useState<string>("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showSubscribersDialog, setShowSubscribersDialog] = useState(false)
@@ -276,7 +278,7 @@ function OrdersPageContent() {
     loadOrders(true)
   }
 
-  const updateOrderStatus = async (orderId: string, newStatus: string, perfumeName?: string, shopifyOrderId?: string) => {
+  const updateOrderStatus = async (orderId: string, newStatus: string, perfumeName?: string, shopifyOrderId?: string, cancellationNote?: string) => {
     try {
       const updateData: any = {
         id: orderId,
@@ -289,6 +291,13 @@ function OrdersPageContent() {
       
       if (shopifyOrderId !== undefined) {
         updateData.shopify_order_id = shopifyOrderId
+      }
+      
+      if (newStatus === 'cancelled' && cancellationNote !== undefined) {
+        updateData.cancellation_note = cancellationNote
+      } else if (newStatus !== 'cancelled') {
+        // 如果狀態不是已取消，清除取消備注
+        updateData.cancellation_note = null
       }
       
       const response = await fetch('/api/orders', {
@@ -309,13 +318,15 @@ function OrdersPageContent() {
                     ...order, 
                     order_status: newStatus, 
                     updated_at: result.order.updated_at,
-                    ship_date: result.order.ship_date ?? order.ship_date 
+                    ship_date: result.order.ship_date ?? order.ship_date,
+                    cancellation_note: result.order.cancellation_note ?? order.cancellation_note
                   }
                 : order
             )
           )
           setEditingOrder(null)
           setTempOrderStatus("")
+          setTempCancellationNote("")
           loadOrders(true)
         } else {
           console.error('更新訂單失敗:', result.error)
@@ -329,7 +340,7 @@ function OrdersPageContent() {
   }
 
   const handleSaveStatus = async (orderId: string) => {
-    await updateOrderStatus(orderId, tempOrderStatus, tempPerfumeName, tempShopifyOrderId)
+    await updateOrderStatus(orderId, tempOrderStatus, tempPerfumeName, tempShopifyOrderId, tempCancellationNote)
   }
 
   const handleCancelEdit = () => {
@@ -337,6 +348,7 @@ function OrdersPageContent() {
     setTempOrderStatus("")
     setTempPerfumeName("")
     setTempShopifyOrderId("")
+    setTempCancellationNote("")
   }
 
   const handleUpdate711Status = async () => {
@@ -943,6 +955,7 @@ function OrdersPageContent() {
                               setTempOrderStatus(order.order_status)
                               setTempPerfumeName(order.perfume_name || "")
                               setTempShopifyOrderId(order.shopify_order_id || "")
+                              setTempCancellationNote(order.cancellation_note || "")
                             }
                           }}
                           className="text-xs sm:text-sm"
@@ -1006,6 +1019,19 @@ function OrdersPageContent() {
                         </div>
                       )}
                     </div>
+                    
+                    {/* 顯示取消備注（僅當訂單狀態為已取消且有備注時） */}
+                    {order.order_status === 'cancelled' && order.cancellation_note && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-start gap-2 text-sm">
+                          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-medium text-red-700">取消備注：</span>
+                            <span className="text-red-600">{order.cancellation_note}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* 展開的詳細訊息 - 只在待處理訂單且展開時顯示 */}
                     {order.order_status === 'pending' && expandedOrder === order.id && (
@@ -1116,6 +1142,19 @@ function OrdersPageContent() {
                                 <option value="cancelled">🔴 已取消</option>
                               </select>
                             </div>
+                            {/* 當選擇已取消時，顯示取消備注輸入框 */}
+                            {tempOrderStatus === 'cancelled' && (
+                              <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">取消備注</label>
+                                <input
+                                  type="text"
+                                  value={tempCancellationNote}
+                                  onChange={(e) => setTempCancellationNote(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
+                                  placeholder="請輸入取消原因或備注..."
+                                />
+                              </div>
+                            )}
                           </div>
                           
                           {/* 第二行：香水名稱和貨號 */}
