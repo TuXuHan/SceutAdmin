@@ -104,6 +104,10 @@ function OrdersPageContent() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
   const [fillingPhones, setFillingPhones] = useState(false)
   const [fillPhonesMessage, setFillPhonesMessage] = useState<string | null>(null)
+  const [fillingAddresses, setFillingAddresses] = useState(false)
+  const [fillAddressesMessage, setFillAddressesMessage] = useState<string | null>(null)
+  const [perfumes, setPerfumes] = useState<Array<{ number: string; name: string; brand: string }>>([])
+  const [loadingPerfumes, setLoadingPerfumes] = useState(false)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 60000, // 60 秒防抖
     maxRetries: 1
@@ -119,6 +123,25 @@ function OrdersPageContent() {
       }
     } catch (err) {
       console.error("載入合作對象列表失敗:", err)
+    }
+  }
+
+  // 載入香水列表
+  const loadPerfumes = async () => {
+    try {
+      setLoadingPerfumes(true)
+      const response = await fetch('/api/perfumes')
+      const result = await response.json()
+      
+      if (result.success) {
+        setPerfumes(result.perfumes || [])
+      } else {
+        console.error('載入香水列表失敗:', result.error)
+      }
+    } catch (error) {
+      console.error('載入香水列表時發生錯誤:', error)
+    } finally {
+      setLoadingPerfumes(false)
     }
   }
 
@@ -236,6 +259,8 @@ function OrdersPageContent() {
     loadSubscribersCount()
     // 載入合作對象列表
     loadPartnerList()
+    // 載入香水列表
+    loadPerfumes()
   }, [])
 
   const loadSubscribersCount = async () => {
@@ -482,6 +507,51 @@ function OrdersPageContent() {
       }, 5000)
     } finally {
       setFillingPhones(false)
+    }
+  }
+
+  const handleFillMissingAddresses = async (skipReload = false) => {
+    try {
+      setFillingAddresses(true)
+      setFillAddressesMessage("正在檢查缺少宅配地址的訂單...")
+      
+      const response = await fetch('/api/orders/fill-missing-addresses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        if (result.updated > 0) {
+          setFillAddressesMessage(`✅ ${result.message}${result.errors && result.errors.length > 0 ? ` (有 ${result.errors.length} 個錯誤)` : ''}`)
+        } else {
+          setFillAddressesMessage(`ℹ️ ${result.message}`)
+        }
+        
+        if (!skipReload) {
+          await loadOrders(true)
+        }
+
+        setTimeout(() => {
+          setFillAddressesMessage(null)
+        }, 5000)
+      } else {
+        setFillAddressesMessage(`❌ 更新失敗：${result.error || result.message}`)
+        setTimeout(() => {
+          setFillAddressesMessage(null)
+        }, 5000)
+      }
+    } catch (err) {
+      console.error("填充宅配地址錯誤:", err)
+      setFillAddressesMessage("❌ 更新失敗，請稍後再試")
+      setTimeout(() => {
+        setFillAddressesMessage(null)
+      }, 5000)
+    } finally {
+      setFillingAddresses(false)
     }
   }
 
@@ -742,20 +812,22 @@ function OrdersPageContent() {
               <Button 
                 variant="outline" 
                 onClick={async () => {
-                  // 1. 先檢查並補充缺少電話號碼的訂單（跳過單獨重新載入）
+                  // 1. 補齊缺少電話號碼的訂單（跳過單獨重新載入）
                   await handleFillMissingPhones(true)
-                  // 2. 然後執行自動生成訂單（跳過單獨重新載入）
+                  // 2. 補齊缺少宅配地址的訂單（跳過單獨重新載入）
+                  await handleFillMissingAddresses(true)
+                  // 3. 然後執行自動生成訂單（跳過單獨重新載入）
                   await handleAutoGenerateOrders(true)
-                  // 3. 最後統一重新載入訂單列表
+                  // 4. 最後統一重新載入訂單列表
                   await loadOrders(true)
                 }}
-                disabled={autoGeneratingOrders || fillingPhones}
+                disabled={autoGeneratingOrders || fillingPhones || fillingAddresses}
                 className="flex items-center gap-2 text-sm"
                 size="sm"
               >
                 <RefreshCw className={`w-4 h-4 ${(autoGeneratingOrders || fillingPhones) ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">
-                  {(autoGeneratingOrders || fillingPhones) ? '檢查中...' : '重新整理'}
+                  {(autoGeneratingOrders || fillingPhones || fillingAddresses) ? '檢查中...' : '重新整理'}
                 </span>
               </Button>
             </div>
@@ -787,6 +859,15 @@ function OrdersPageContent() {
             </AlertDescription>
           </Alert>
         )}
+
+      {/* 補齊宅配地址訊息 */}
+      {fillAddressesMessage && (
+        <Alert className="mb-6 border-blue-200 bg-blue-50">
+          <AlertDescription className="text-blue-800">
+            {fillAddressesMessage}
+          </AlertDescription>
+        </Alert>
+      )}
 
         {!isDatabaseConfigured && (
           <Alert className="mb-6 border-amber-200 bg-amber-50">
@@ -1161,13 +1242,27 @@ function OrdersPageContent() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">香水名稱</label>
-                              <input
-                                type="text"
+                              <select
                                 value={tempPerfumeName}
                                 onChange={(e) => setTempPerfumeName(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
-                                placeholder="輸入香水名稱..."
-                              />
+                                disabled={loadingPerfumes}
+                              >
+                                <option value="">選擇香水...</option>
+                                {perfumes.map((perfume, index) => {
+                                  const displayText = perfume.number 
+                                    ? `${perfume.number} - ${perfume.name}${perfume.brand ? ` (${perfume.brand})` : ''}`
+                                    : perfume.name
+                                  return (
+                                    <option key={index} value={perfume.name}>
+                                      {displayText}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                              {loadingPerfumes && (
+                                <p className="text-xs text-gray-500 mt-1">載入香水中...</p>
+                              )}
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">貨號</label>

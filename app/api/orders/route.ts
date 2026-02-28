@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { decreasePerfumeUnits } from '@/lib/google-sheets'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 
@@ -122,6 +123,35 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    // 檢查是否有香水名稱更新，如果有且是新增的，則減少庫存
+    let shouldDecreaseInventory = false
+    let perfumeNameToDecrease: string | null = null
+
+    if (updateData.perfume_name !== undefined && updateData.perfume_name !== null && updateData.perfume_name.trim() !== '') {
+      // 先獲取原始訂單資料，檢查是否為新增香水名稱
+      const currentOrderResponse = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}&select=perfume_name`, {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (currentOrderResponse.ok) {
+        const currentOrders = await currentOrderResponse.json()
+        const currentOrder = Array.isArray(currentOrders) && currentOrders.length > 0 ? currentOrders[0] : null
+        
+        // 如果原本沒有香水名稱，或香水名稱不同，則減少庫存
+        const currentPerfumeName = currentOrder?.perfume_name?.trim() || ''
+        const newPerfumeName = updateData.perfume_name.trim()
+        
+        if (currentPerfumeName !== newPerfumeName) {
+          shouldDecreaseInventory = true
+          perfumeNameToDecrease = newPerfumeName
+        }
+      }
+    }
+
     // 為更新添加 updated_at 時間戳
     const orderWithTimestamp: Record<string, any> = {
       ...updateData,
@@ -152,6 +182,18 @@ export async function PUT(request: NextRequest) {
     }
 
     const updatedOrder = await response.json()
+    
+    // 如果訂單更新成功且需要減少庫存，則更新 Google Sheet
+    if (shouldDecreaseInventory && perfumeNameToDecrease) {
+      try {
+        await decreasePerfumeUnits(perfumeNameToDecrease)
+        console.log(`✅ 訂單 ${id} 已更新，並減少香水 "${perfumeNameToDecrease}" 的庫存`)
+      } catch (inventoryError) {
+        console.error(`⚠️ 訂單更新成功，但減少庫存失敗:`, inventoryError)
+        // 不影響訂單更新，只記錄錯誤
+      }
+    }
+
     return NextResponse.json({ success: true, order: updatedOrder[0] })
   } catch (error) {
     console.error('Error updating order:', error)

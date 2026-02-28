@@ -23,8 +23,9 @@ export async function POST(request: NextRequest) {
     console.log("📅 今天:", todayOnly.toLocaleDateString('zh-TW'), `(${todayOnly.toISOString()})`)
     console.log("📅 3天後:", threeDaysLater.toLocaleDateString('zh-TW'), `(${threeDaysLater.toISOString()})`)
     
-    // 獲取所有活躍訂閱者
-    const allActiveSubscribersResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?select=*&subscription_status=eq.active`, {
+    // 獲取所有活躍訂閱者（包含 active 和 paid 狀態）
+    // 使用 OR 條件來獲取兩種狀態的訂閱者
+    const allActiveSubscribersResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?select=*&subscription_status=in.(active,paid)`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const allActiveSubscribers = await allActiveSubscribersResponse.json()
-    console.log("📊 所有活躍訂閱者數量:", allActiveSubscribers.length)
+    console.log("📊 所有活躍訂閱者數量 (active + paid):", allActiveSubscribers.length)
     console.log("📊 所有活躍訂閱者詳細資訊:", JSON.stringify(allActiveSubscribers.map((s: any) => ({
       name: s.name,
       email: s.email,
@@ -46,6 +47,42 @@ export async function POST(request: NextRequest) {
       monthly_fee: s.monthly_fee
     })), null, 2))
     
+    // 獲取所有合作對象（從 partner_list 表）
+    // 包含 active 和 paid 狀態，確保不遺漏任何合作對象
+    const partnersResponse = await fetch(`${SUPABASE_URL}/rest/v1/partner_list?select=*&subscription_status=in.(active,paid)`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    let partners: any[] = []
+    if (partnersResponse.ok) {
+      partners = await partnersResponse.json()
+      console.log("📊 所有合作對象數量 (active + paid):", partners.length)
+      
+      // 如果沒有找到任何合作對象，嘗試獲取所有（不限制狀態）來檢查
+      if (partners.length === 0) {
+        const allPartnersResponse = await fetch(`${SUPABASE_URL}/rest/v1/partner_list?select=*`, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (allPartnersResponse.ok) {
+          const allPartners = await allPartnersResponse.json()
+          console.log(`📊 所有合作對象（不限狀態）: ${allPartners.length} 筆`)
+          if (allPartners.length > 0) {
+            console.log("⚠️ 注意：有合作對象但狀態不是 active/paid，可能被遺漏")
+          }
+        }
+      }
+    } else {
+      console.warn("⚠️ 獲取合作對象失敗:", partnersResponse.statusText)
+    }
+
     // 在應用層面過濾出3天內要付款的訂閱者
     const subscribers = allActiveSubscribers.filter((subscriber: any) => {
       if (!subscriber.next_payment_date) {
@@ -81,18 +118,54 @@ export async function POST(request: NextRequest) {
       
       return isWithinRange
     })
+
+    // 過濾出3天內要付款的合作對象
+    const partnersForOrder = partners.filter((partner: any) => {
+      if (!partner.next_payment_date) {
+        return false
+      }
+      
+      const paymentDate = new Date(partner.next_payment_date)
+      const paymentYear = paymentDate.getFullYear()
+      const paymentMonth = paymentDate.getMonth()
+      const paymentDay = paymentDate.getDate()
+      const paymentDateOnly = new Date(paymentYear, paymentMonth, paymentDay)
+      paymentDateOnly.setHours(0, 0, 0, 0)
+      
+      return paymentDateOnly >= todayOnly && paymentDateOnly <= threeDaysLater
+    })
+
+    // 合併訂閱者和合作對象，轉換為統一的格式
+    const allCustomers = [
+      ...subscribers.map((s: any) => ({ ...s, source: 'subscriber' })),
+      ...partnersForOrder.map((p: any) => ({ 
+        ...p, 
+        source: 'partner',
+        user_id: p.user_id,
+        name: p.name,
+        email: p.email,
+        phone: p.phone,
+        monthly_fee: p.monthly_fee || 599,
+        delivery_method: p.delivery_method,
+        "711": p["711"],
+        address: p.address,
+        next_payment_date: p.next_payment_date
+      }))
+    ]
     
     console.log("📊 符合3天內付款條件的訂閱者數量:", subscribers.length)
-    console.log("📊 符合條件的訂閱者:", JSON.stringify(subscribers.map((s: any) => ({ 
+    console.log("📊 符合3天內付款條件的合作對象數量:", partnersForOrder.length)
+    console.log("📊 符合條件的客戶:", JSON.stringify(allCustomers.map((s: any) => ({ 
       name: s.name, 
       email: s.email, 
+      source: s.source,
       next_payment_date: s.next_payment_date 
     })), null, 2))
     
-    if (!subscribers || subscribers.length === 0) {
+    if (!allCustomers || allCustomers.length === 0) {
       return NextResponse.json({
         success: true,
-        message: '沒有3天內要付款的訂閱者需要生成訂單',
+        message: '沒有3天內要付款的客戶需要生成訂單',
         generatedOrders: 0,
         skippedOrders: 0,
         totalProcessed: 0
@@ -103,15 +176,15 @@ export async function POST(request: NextRequest) {
     let skippedOrders = 0
     const errors: string[] = []
 
-    for (const subscriber of subscribers) {
+    for (const customer of allCustomers) {
       try {
-        console.log(`\n🔄 處理訂閱者: ${subscriber.name}`)
-        console.log(`   付款日期: ${subscriber.next_payment_date}`)
-        console.log(`   月費: ${subscriber.monthly_fee}`)
-        console.log(`   配送方式: ${subscriber.delivery_method}`)
+        console.log(`\n🔄 處理客戶: ${customer.name} (${customer.source})`)
+        console.log(`   付款日期: ${customer.next_payment_date}`)
+        console.log(`   月費: ${customer.monthly_fee}`)
+        console.log(`   配送方式: ${customer.delivery_method}`)
         
         // 檢查是否已經有相同訂閱者的待處理或處理中訂單
-        const existingOrderResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,order_status&subscriber_name=eq.${encodeURIComponent(subscriber.name)}&order_status=in.(pending,processing)`, {
+        const existingOrderResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,order_status&subscriber_name=eq.${encodeURIComponent(customer.name)}&order_status=in.(pending,processing)`, {
           headers: {
             'apikey': SUPABASE_KEY,
             'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -127,12 +200,12 @@ export async function POST(request: NextRequest) {
             const processingOrders = existingOrders.filter((order: any) => order.order_status === 'processing')
             
             if (pendingOrders.length > 0) {
-              console.log(`   ⏭️ 跳過 ${subscriber.name} - 已有待處理訂單`)
+              console.log(`   ⏭️ 跳過 ${customer.name} (${customer.source}) - 已有待處理訂單`)
             } else if (processingOrders.length > 0) {
-              console.log(`   ⏭️ 跳過 ${subscriber.name} - 已有處理中訂單`)
+              console.log(`   ⏭️ 跳過 ${customer.name} (${customer.source}) - 已有處理中訂單`)
             }
             skippedOrders++
-            continue // 跳過已存在待處理或處理中訂單的訂閱者
+            continue // 跳過已存在待處理或處理中訂單的客戶
           }
         } else {
           console.log(`   ❌ 檢查現有訂單失敗: ${existingOrderResponse.status}`)
@@ -148,16 +221,16 @@ export async function POST(request: NextRequest) {
         const newOrder: any = {
           id: orderId,
           shopify_order_id: shopifyOrderId,
-          customer_email: subscriber.email,
-          customer_phone: subscriber.phone || null,
-          total_price: subscriber.monthly_fee || '599.00',
+          customer_email: customer.email,
+          customer_phone: customer.phone || null,
+          total_price: customer.monthly_fee || '599.00',
           currency: 'TWD',
           order_status: 'pending',
-          subscriber_name: subscriber.name,
-          user_id: subscriber.user_id,
+          subscriber_name: customer.name,
+          user_id: customer.user_id || null,
           perfume_name: null,
-          delivery_method: subscriber.delivery_method || null,
-          "711": subscriber["711"] || null,
+          delivery_method: customer.delivery_method || null,
+          "711": customer["711"] || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           ratings: null,
@@ -165,8 +238,8 @@ export async function POST(request: NextRequest) {
         }
 
         // 只有當配送方式是宅配時才添加shipping_address
-        if (subscriber.delivery_method === 'home' && subscriber.address) {
-          newOrder.shipping_address = subscriber.address
+        if (customer.delivery_method === 'home' && customer.address) {
+          newOrder.shipping_address = customer.address
         }
 
         console.log(`   📦 準備創建訂單:`, JSON.stringify(newOrder, null, 2))
@@ -184,16 +257,16 @@ export async function POST(request: NextRequest) {
 
         if (createOrderResponse.ok) {
           generatedOrders++
-          console.log(`   ✅ 為 ${subscriber.name} 生成訂單成功`)
+          console.log(`   ✅ 為 ${customer.name} (${customer.source}) 生成訂單成功`)
         } else {
           const errorText = await createOrderResponse.text()
-          console.log(`   ❌ 為 ${subscriber.name} 創建訂單失敗: ${errorText}`)
-          errors.push(`為 ${subscriber.name} 創建訂單失敗: ${errorText}`)
+          console.log(`   ❌ 為 ${customer.name} (${customer.source}) 創建訂單失敗: ${errorText}`)
+          errors.push(`為 ${customer.name} (${customer.source}) 創建訂單失敗: ${errorText}`)
         }
 
       } catch (err) {
-        console.log(`   ❌ 處理 ${subscriber.name} 時發生錯誤:`, err)
-        errors.push(`處理 ${subscriber.name} 時發生錯誤: ${err instanceof Error ? err.message : String(err)}`)
+        console.log(`   ❌ 處理 ${customer.name} (${customer.source}) 時發生錯誤:`, err)
+        errors.push(`處理 ${customer.name} (${customer.source}) 時發生錯誤: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
@@ -202,7 +275,9 @@ export async function POST(request: NextRequest) {
       message: `自動訂單生成完成`,
       generatedOrders,
       skippedOrders,
-      totalProcessed: subscribers.length,
+      totalProcessed: allCustomers.length,
+      subscribersCount: subscribers.length,
+      partnersCount: partnersForOrder.length,
       errors: errors.length > 0 ? errors : undefined
     })
 

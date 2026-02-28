@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { jsonrepair } from 'jsonrepair'
-import { fetchPerfumeInventory, type InventoryRow } from '@/lib/google-sheets'
+import { fetchPerfumeInventory, fetchPerfumeIntroduction, type InventoryRow } from '@/lib/google-sheets'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 
@@ -171,40 +170,31 @@ async function generatePerfumeRecommendations(quizAnswers: any, excludePerfumes:
   }
 
   try {
-    // 讀取香水資料庫
+    // 從 Google Sheet 讀取香水資料庫
     let perfumeDatabase = '香水資料庫暫時不可用'
     try {
-      const fs = require('fs')
-      const path = require('path')
-      const jsonPath = path.join(process.cwd(), 'introduction.json')
-      const jsonData = fs.readFileSync(jsonPath, 'utf8')
-      perfumeDatabase = jsonData
+      const introductionData = await fetchPerfumeIntroduction()
+      console.log('成功從 Google Sheet 載入香水介紹資料，筆數:', introductionData[0]?.data?.length || 0)
 
-      try {
-        const repairedIntroduction = jsonrepair(jsonData)
-        const parsedIntroduction = JSON.parse(repairedIntroduction)
-        const { filteredData } = buildIntroductionContext(parsedIntroduction, inventoryMap)
+      const { filteredData } = buildIntroductionContext(introductionData, inventoryMap)
 
-        if (Array.isArray(filteredData)) {
-          const totalEntries = filteredData.reduce((count: number, table: any) => {
-            if (!table || !Array.isArray(table.data)) {
-              return count
-            }
-            return count + table.data.length
-          }, 0)
-
-          if (totalEntries === 0) {
-            console.warn('香水資料庫中沒有可用庫存的品項，改用備用推薦')
-            return getFallbackRecommendations(inventoryRows)
+      if (Array.isArray(filteredData)) {
+        const totalEntries = filteredData.reduce((count: number, table: any) => {
+          if (!table || !Array.isArray(table.data)) {
+            return count
           }
-        }
+          return count + table.data.length
+        }, 0)
 
-        perfumeDatabase = JSON.stringify(filteredData, null, 2)
-      } catch (parseError) {
-        console.error('解析香水資料庫 JSON 失敗，改用原始內容:', parseError)
+        if (totalEntries === 0) {
+          console.warn('香水資料庫中沒有可用庫存的品項，改用備用推薦')
+          return getFallbackRecommendations(inventoryRows)
+        }
       }
+
+      perfumeDatabase = JSON.stringify(filteredData, null, 2)
     } catch (error) {
-      console.log('無法讀取香水資料庫檔案:', error)
+      console.error('無法從 Google Sheet 讀取香水資料庫:', error)
       perfumeDatabase = '香水資料庫暫時不可用'
     }
 

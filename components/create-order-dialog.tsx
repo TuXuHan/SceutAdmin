@@ -45,6 +45,8 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
   const [showUserList, setShowUserList] = useState(false)
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [perfumes, setPerfumes] = useState<Array<{ number: string; name: string; brand: string }>>([])
+  const [loadingPerfumes, setLoadingPerfumes] = useState(false)
 
   // 訂單表單資料
   const [orderData, setOrderData] = useState({
@@ -148,10 +150,13 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
       setFilteredUsers(allUsers)
     } else {
       // 如果有搜索詞，在前端也進行過濾（API 已經過濾，這裡作為雙重保障）
-      const filtered = allUsers.filter(user => 
-        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+      const searchLower = searchTerm.toLowerCase()
+      const filtered = allUsers.filter(user => {
+        const nameMatch = user.name && user.name.toLowerCase().includes(searchLower)
+        const emailMatch = user.email && user.email.toLowerCase().includes(searchLower)
+        const idMatch = user.id && user.id.toLowerCase().includes(searchLower)
+        return nameMatch || emailMatch || idMatch
+      })
       setFilteredUsers(filtered)
     }
   }, [users, partners, searchTerm])
@@ -250,10 +255,30 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
     }
   }
 
-  // 當對話框打開時載入用戶（訂閱者 + 合作對象）
+  // 載入香水列表
+  const loadPerfumes = async () => {
+    try {
+      setLoadingPerfumes(true)
+      const response = await fetch('/api/perfumes')
+      const result = await response.json()
+      
+      if (result.success) {
+        setPerfumes(result.perfumes || [])
+      } else {
+        console.error('載入香水列表失敗:', result.error)
+      }
+    } catch (error) {
+      console.error('載入香水列表時發生錯誤:', error)
+    } finally {
+      setLoadingPerfumes(false)
+    }
+  }
+
+  // 當對話框打開時載入用戶（訂閱者 + 合作對象）和香水列表
   useEffect(() => {
     if (open) {
       loadAllUsers()
+      loadPerfumes()
     }
   }, [open])
 
@@ -306,14 +331,16 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                   ) : filteredUsers.length > 0 ? (
                     filteredUsers.map((user) => (
                       <div
-                        key={user.id}
+                        key={user.id || `user-${Math.random()}`}
                         className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                         onClick={() => selectUser(user)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="font-medium">{user.name}</div>
+                              <div className="font-medium">
+                                {user.name || user.email || `訂閱者 ${user.id || '未知'}`}
+                              </div>
                               {user.isPartner ? (
                                 <Badge 
                                   variant="default"
@@ -321,16 +348,22 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                                 >
                                   合作對象
                                 </Badge>
-                              ) : user.subscription_status && (
+                              ) : (
+                                // 顯示訂閱狀態，包括 null、pending、待訂閱等所有狀態
                                 <Badge 
-                                  variant={user.subscription_status === 'active' ? 'default' : 'secondary'}
+                                  variant={user.subscription_status === 'active' || user.subscription_status === 'paid' ? 'default' : 'secondary'}
                                   className={`text-xs ${
-                                    user.subscription_status === 'active' 
+                                    user.subscription_status === 'active' || user.subscription_status === 'paid'
                                       ? 'bg-green-100 text-green-800 border-green-300' 
                                       : 'bg-gray-100 text-gray-800 border-gray-300'
                                   }`}
                                 >
-                                  {user.subscription_status === 'active' ? '✓ 已訂閱' : '⏳ 待訂閱'}
+                                  {!user.subscription_status || user.subscription_status === 'pending' || user.subscription_status === '待訂閱'
+                                    ? '⏳ 待訂閱'
+                                    : user.subscription_status === 'active' || user.subscription_status === 'paid'
+                                    ? '✓ 已訂閱'
+                                    : `⏳ ${user.subscription_status}`
+                                  }
                                 </Badge>
                               )}
                             </div>
@@ -430,12 +463,28 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated }: Create
                 </div>
                 <div>
                   <Label htmlFor="perfume_name">香水名稱</Label>
-                  <Input
+                  <select
                     id="perfume_name"
                     value={orderData.perfume_name}
                     onChange={(e) => setOrderData(prev => ({ ...prev, perfume_name: e.target.value }))}
-                    placeholder="輸入香水名稱..."
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent"
+                    disabled={loadingPerfumes}
+                  >
+                    <option value="">選擇香水...</option>
+                    {perfumes.map((perfume, index) => {
+                      const displayText = perfume.number 
+                        ? `${perfume.number} - ${perfume.name}${perfume.brand ? ` (${perfume.brand})` : ''}`
+                        : perfume.name
+                      return (
+                        <option key={index} value={perfume.name}>
+                          {displayText}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  {loadingPerfumes && (
+                    <p className="text-xs text-gray-500 mt-1">載入香水中...</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="subscriber_name">訂購人姓名 *</Label>
