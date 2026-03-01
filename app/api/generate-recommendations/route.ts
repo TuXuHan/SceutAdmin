@@ -110,6 +110,8 @@ function attachInventoryMetadata(recommendations: any, inventoryMap: Map<string,
       if (inventoryRow) {
         result[key] = {
           ...recommendation,
+          // 如果 AI 沒有返回編號或編號為空，使用庫存資料中的編號
+          number: recommendation.number || inventoryRow.number || '',
           unitsLeft: inventoryRow.unitsLeft,
         }
       }
@@ -129,7 +131,7 @@ function getInventoryFallbackRecommendations(inventoryRows: InventoryRow[]) {
 
   const makeRecommendation = (row: InventoryRow, index: number) => ({
     name: row.product,
-    number: '',
+    number: row.number || '',
     brand: row.brand || '精選香水',
     description: `${row.product} 目前庫存剩餘 ${row.unitsLeft} 件，適合作為即時推薦。`,
     confidence: confidences[index] ?? 60,
@@ -213,7 +215,7 @@ ${perfumeDatabase}
 
 **【強制規則】品牌多樣性 - 必須嚴格遵守**
 ⚠️ 這是最高優先級的規則：
-1. primary、secondary、alternative 必須來自 3 個不同品牌
+1. 主要、次要、替代推薦 必須來自 3 個不同品牌
 2. 絕對不允許任何兩個推薦來自同一品牌
 3. 在選擇每個推薦之前，檢查該品牌是否已被使用
 4. 即使某品牌有更適合的香水，如果該品牌已被選中，必須選擇其他品牌
@@ -253,7 +255,7 @@ ${perfumeDatabase}
           content: `你是一位專業的香水顧問，擁有豐富的香水知識和個性化推薦經驗。請根據用戶的測驗答案提供專業、準確的香水推薦。
 
 【最重要規則 - 品牌多樣性】
-這是最高優先級的規則，必須嚴格遵守：
+這是最高優先級的規則，必須嚴格遵守���
 1. 三個推薦必須來自三個不同的品牌
 2. 絕對禁止任何兩個推薦來自同一品牌
 3. 在選擇香水之前，先確認品牌是否已被使用
@@ -394,10 +396,10 @@ function ensureBrandDiversity(
 
   const keys: Array<'primary' | 'secondary' | 'alternative'> = ['primary', 'secondary', 'alternative']
   const result = { ...recommendations }
-  
+
   // 收集所有推薦的品牌
   const usedBrands: Map<string, string[]> = new Map() // brand -> [key1, key2, ...]
-  
+
   keys.forEach((key) => {
     const rec = result[key]
     if (rec?.brand) {
@@ -411,7 +413,7 @@ function ensureBrandDiversity(
 
   // 檢查是否有品牌出現超過一次
   const duplicateBrands = Array.from(usedBrands.entries()).filter(([_, positions]) => positions.length > 1)
-  
+
   if (duplicateBrands.length === 0) {
     console.log('品牌多樣性檢查通過：無重複品牌')
     return result
@@ -440,7 +442,7 @@ function ensureBrandDiversity(
     // 保留第一個（通常是 primary），替換後面的
     for (let i = 1; i < positions.length; i++) {
       const positionToReplace = positions[i]
-      
+
       if (availableAlternatives.length === 0) {
         console.log(`沒有其他品牌可用，無法替換 ${positionToReplace}`)
         continue
@@ -449,16 +451,16 @@ function ensureBrandDiversity(
       // 隨機選擇一個不同品牌的香水
       const randomIndex = Math.floor(Math.random() * availableAlternatives.length)
       const replacement = availableAlternatives[randomIndex]
-      
+
       console.log(`將 ${positionToReplace} 的 ${result[positionToReplace]?.name} (${result[positionToReplace]?.brand}) 替換為 ${replacement.product} (${replacement.brand})`)
 
       // 計算新的匹配度（根據位置調整）
       const baseConfidence = positionToReplace === 'secondary' ? 75 : 68
       const confidenceVariation = Math.floor(Math.random() * 10) - 5
-      
+
       result[positionToReplace] = {
         name: replacement.product,
-        number: '',
+        number: replacement.number || '',
         brand: replacement.brand || '精選香水',
         description: `${replacement.product} 是一款來自 ${replacement.brand || '精選品牌'} 的香水，為您提供不同的香氛體驗。`,
         confidence: baseConfidence + confidenceVariation,

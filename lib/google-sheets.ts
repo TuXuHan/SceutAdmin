@@ -61,6 +61,7 @@ function handleGoogleSheetsError(error: any, spreadsheetId: string, range?: stri
 }
 
 export type InventoryRow = {
+  number: string
   brand: string
   product: string
   unitsLeft: number
@@ -95,6 +96,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
 
   const { headerRowIndex, header } = locateHeaderRow(rows)
 
+  const noIdx = findColumnIndex(header, ["no.", "no", "編號", "number"])
   const brandIdx = findColumnIndex(header, ["brand name", "brand", "品牌", "品牌名稱", "brandname"])
   const productIdx = findColumnIndex(header, ["product name", "product", "產品名稱", "香水名稱", "productname"])
   const unitsIdx = findColumnIndex(header, ["units left", "units", "庫存", "庫存數量", "剩餘數量", "剩餘件數"])
@@ -102,6 +104,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
   if (brandIdx < 0 || productIdx < 0 || unitsIdx < 0) {
     console.error("Sheet header parsing error", {
       header,
+      noIdx,
       brandIdx,
       productIdx,
       unitsIdx,
@@ -113,6 +116,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
 
   return rows.slice(headerRowIndex + 1).flatMap((row) => {
     const cells = row.map((cell) => (cell ?? "").toString().trim())
+    const number = noIdx >= 0 ? (cells[noIdx] || "") : ""
     const brand = cells[brandIdx] || lastBrand
     const product = cells[productIdx]
     const unitsCell = cells[unitsIdx]
@@ -128,6 +132,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
 
     return [
       {
+        number,
         brand,
         product,
         unitsLeft: Number.isFinite(unitsLeft) && unitsLeft >= 0 ? unitsLeft : 0,
