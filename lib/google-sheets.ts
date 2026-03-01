@@ -73,6 +73,8 @@ type SheetRow = (string | number | null | undefined)[]
 export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow[]> {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID
 
+  console.log("[v0] GOOGLE_SHEET_ID:", spreadsheetId)
+
   if (!spreadsheetId) {
     throw new Error("Missing GOOGLE_SHEET_ID")
   }
