@@ -488,6 +488,9 @@ function ensureBrandDiversity(
  * 請求參數: { userId: string, quizAnswers: any }
  */
 export async function POST(request: NextRequest) {
+  console.log("[v0] generate-recommendations API called")
+  console.log("[v0] GOOGLE_SHEET_ID =", process.env.GOOGLE_SHEET_ID)
+  
   try {
     const { userId, quizAnswers } = await request.json()
 
