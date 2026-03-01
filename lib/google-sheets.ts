@@ -26,7 +26,7 @@ function getGoogleAuth() {
 function handleGoogleSheetsError(error: any, spreadsheetId: string, range?: string): never {
   if (error.code === 403 || error.status === 403) {
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-    const errorMessage = 
+    const errorMessage =
       `❌ Google Sheets 權限錯誤 (403)\n\n` +
       `無法訪問 Google Sheet。請確認以下步驟：\n\n` +
       `1. 打開您的 Google Sheet\n` +
@@ -37,13 +37,13 @@ function handleGoogleSheetsError(error: any, spreadsheetId: string, range?: stri
       `5. 點擊「完成」\n\n` +
       `Sheet ID: ${spreadsheetId}\n` +
       `Service Account Email: ${serviceAccountEmail}`
-    
+
     console.error(errorMessage)
     throw new Error(errorMessage)
   }
-  
+
   if (error.code === 400 || error.status === 400) {
-    const errorMessage = 
+    const errorMessage =
       `❌ Google Sheets 範圍錯誤 (400)\n\n` +
       `無法解析範圍: ${range || '未指定'}\n\n` +
       `可能的原因：\n` +
@@ -52,11 +52,11 @@ function handleGoogleSheetsError(error: any, spreadsheetId: string, range?: stri
       `3. 工作表不存在\n\n` +
       `Sheet ID: ${spreadsheetId}\n` +
       `嘗試的範圍: ${range || '未指定'}`
-    
+
     console.error(errorMessage)
     throw new Error(errorMessage)
   }
-  
+
   throw error
 }
 
@@ -78,7 +78,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
   }
 
   const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() })
-  
+
   let data
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -174,7 +174,7 @@ export async function fetchPerfumeIntroduction(range = "A:I"): Promise<Array<{ t
   }
 
   const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() })
-  
+
   let data
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -375,7 +375,7 @@ export async function decreasePerfumeUnits(perfumeName: string, range = "A:I"): 
     // 5. 更新 Google Sheet（需要轉換為 A1 格式）
     // 行號從 1 開始，列號從 A=1 開始
     const rowNumber = targetRowIndex + 1 // Google Sheets 行號從 1 開始
-    
+
     // 將列索引轉換為字母（A=0, B=1, ..., Z=25, AA=26, ...）
     const getColumnLetter = (colIndex: number): string => {
       let result = ''
@@ -385,7 +385,7 @@ export async function decreasePerfumeUnits(perfumeName: string, range = "A:I"): 
       }
       return result
     }
-    
+
     const columnLetter = getColumnLetter(unitsIdx)
     const cellRange = `${columnLetter}${rowNumber}`
 
