@@ -1075,6 +1075,19 @@ function OrdersPageContent() {
                       </div>
                     </div>
                     
+                    {/* 顯示香水名稱 - 已出貨訂單顯示資料庫記錄 */}
+                    {order.perfume_name && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Package className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <span className="text-gray-600">香水:</span>
+                          <span className="font-medium text-gray-800">
+                            {order.perfume_name}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                       <div className="text-sm text-gray-600">
                         總金額: <span className="font-medium text-gray-800">{order.currency || 'NT$'} {(order.total_price || order.total_amount || 0).toLocaleString()}</span>
@@ -1242,26 +1255,36 @@ function OrdersPageContent() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">香水名稱</label>
-                              <select
-                                value={tempPerfumeName}
-                                onChange={(e) => setTempPerfumeName(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
-                                disabled={loadingPerfumes}
-                              >
-                                <option value="">選擇香水...</option>
-                                {perfumes.map((perfume, index) => {
-                                  const displayText = perfume.number 
-                                    ? `${perfume.number} - ${perfume.name}${perfume.brand ? ` (${perfume.brand})` : ''}`
-                                    : perfume.name
-                                  return (
-                                    <option key={index} value={perfume.name}>
-                                      {displayText}
-                                    </option>
-                                  )
-                                })}
-                              </select>
-                              {loadingPerfumes && (
-                                <p className="text-xs text-gray-500 mt-1">載入香水中...</p>
+                              {/* 已出貨訂單顯示資料庫記錄的香水名稱（只讀） */}
+                              {(order.order_status === 'shipped' || order.order_status === 'shippped' || order.order_status === 'delivered') && order.perfume_name ? (
+                                <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm text-gray-700">
+                                  {order.perfume_name}
+                                </div>
+                              ) : (
+                                /* 非已出貨訂單顯示下拉選單 */
+                                <>
+                                  <select
+                                    value={tempPerfumeName}
+                                    onChange={(e) => setTempPerfumeName(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm"
+                                    disabled={loadingPerfumes}
+                                  >
+                                    <option value="">選擇香水...</option>
+                                    {perfumes.map((perfume, index) => {
+                                      const displayText = perfume.number 
+                                        ? `${perfume.number} - ${perfume.name}${perfume.brand ? ` (${perfume.brand})` : ''}`
+                                        : perfume.name
+                                      return (
+                                        <option key={index} value={perfume.name}>
+                                          {displayText}
+                                        </option>
+                                      )
+                                    })}
+                                  </select>
+                                  {loadingPerfumes && (
+                                    <p className="text-xs text-gray-500 mt-1">載入香水中...</p>
+                                  )}
+                                </>
                               )}
                             </div>
                             <div>

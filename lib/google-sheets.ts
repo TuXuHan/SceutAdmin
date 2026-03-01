@@ -65,6 +65,8 @@ export type InventoryRow = {
   brand: string
   product: string
   unitsLeft: number
+  /** 香水編號 (來自 No. / 編號 欄位)，用於 AI 推薦顯示 */
+  number: string
 }
 
 type SheetRow = (string | number | null | undefined)[]
@@ -121,6 +123,12 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
     const brand = cells[brandIdx] || lastBrand
     const product = cells[productIdx]
     const unitsCell = cells[unitsIdx]
+    const rawNumber = noIdx >= 0 ? (cells[noIdx] ?? "") : ""
+    let number = typeof rawNumber === "string" ? rawNumber.trim() : String(rawNumber ?? "").trim()
+    // 去掉前綴 "No." 以便前端統一顯示為 No.{number}
+    if (number && /^no\.\s*/i.test(number)) {
+      number = number.replace(/^no\.\s*/i, "").trim()
+    }
 
     lastBrand = brand || lastBrand
 
@@ -137,6 +145,7 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
         brand,
         product,
         unitsLeft: Number.isFinite(unitsLeft) && unitsLeft >= 0 ? unitsLeft : 0,
+        number,
       },
     ]
   })
