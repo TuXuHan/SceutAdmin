@@ -370,7 +370,7 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                                 ? 'bg-red-100 text-red-800 border-red-300'
                                 : 'bg-gray-100 text-gray-800 border-gray-300'
                             }`}>
-                            {subscriber.subscription_status === 'active' ? '��� 已訂閱' : 
+                            {subscriber.subscription_status === 'active' ? '✓ 已訂閱' : 
                              subscriber.subscription_status === 'terminated' ? '✗ 已終止' : 
                              '⏳ 待訂閱'}
                             </span>
