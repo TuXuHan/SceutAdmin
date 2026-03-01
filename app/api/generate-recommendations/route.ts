@@ -3,9 +3,9 @@ import OpenAI from 'openai'
 import { fetchPerfumeInventory, fetchPerfumeIntroduction, type InventoryRow } from '@/lib/google-sheets'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 
-                     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-                     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y"
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y"
 
 // 初始化 OpenAI 客户端 (仅在有API key时)
 let openai: OpenAI | null = null
@@ -100,20 +100,20 @@ function attachInventoryMetadata(recommendations: any, inventoryMap: Map<string,
   }
 
   const result = { ...recommendations }
-  ;['primary', 'secondary', 'alternative'].forEach((key) => {
-    const recommendation = result[key]
-    if (!recommendation) {
-      return
-    }
-
-    const inventoryRow = inventoryMap.get(normalizeKey(recommendation.name))
-    if (inventoryRow) {
-      result[key] = {
-        ...recommendation,
-        unitsLeft: inventoryRow.unitsLeft,
+    ;['primary', 'secondary', 'alternative'].forEach((key) => {
+      const recommendation = result[key]
+      if (!recommendation) {
+        return
       }
-    }
-  })
+
+      const inventoryRow = inventoryMap.get(normalizeKey(recommendation.name))
+      if (inventoryRow) {
+        result[key] = {
+          ...recommendation,
+          unitsLeft: inventoryRow.unitsLeft,
+        }
+      }
+    })
 
   return result
 }
@@ -209,10 +209,17 @@ ${perfumeDatabase}
 
 請完全避開曾經已經給過用戶的香水：${avoidList.length ? avoidList.join('、') : '無'}。
 
-請根據用戶的測驗答案，從香水資料庫中選擇最適合的香水進行推薦。加入 10–20% 的隨機性，讓每次結果不同，但不能違反使用者的核心偏好。請提供以下格式的推薦：
+請根據用戶的測驗答案，從香水資料庫中選擇最適合的香水進行推薦。加入 10–20% 的隨機性，讓每次結果不同，但不能違反使用者的核心偏好。
+
+**重要要求：品牌多樣性**
+- 3個推薦應盡量來自不同品牌，避免重複推薦同一品牌
+- 如果資料庫中某品牌香水較多，請主動選擇其他品牌的香水以增加多樣性
+- 只有在沒有其他合適選擇時，才允許同一品牌出現兩次，但絕不允許三個推薦都來自同一品牌
+
+請提供以下格式的推薦：
 1. 主要推薦 (最符合用戶偏好，85-95%匹配度)
-2. 次要推薦 (不同風格但仍適合，70-84%匹配度)  
-3. 替代推薦 (額外選擇，60-75%匹配度)
+2. 次要推薦 (不同風格但仍適合，70-84%匹配度，盡量選擇不同品牌)  
+3. 替代推薦 (額外選擇，60-75%匹配度，盡量選擇不同品牌)
 
 對於每個推薦，請包含：
 - 香水名稱及編號 (使用資料庫中的 Product Name 和 No.)
@@ -240,14 +247,14 @@ ${perfumeDatabase}
       messages: [
         {
           role: "system",
-          content: "你是一位專業的香水顧問，擁有豐富的香水知識和個性化推薦經驗。請根據用戶的測驗答案提供專業、準確的香水推薦。"
+          content: "你是一位專業的香水顧問，擁有豐富的香水知識和個性化推薦經驗。請根據用戶的測驗答案提供專業、準確的香水推薦。在推薦時，請確保品牌多樣性。"
         },
         {
-          role: "user", 
+          role: "user",
           content: prompt
         }
       ],
-      temperature: 0.7,
+      temperature: 0.8, // 提高溫度以增加隨機性和多樣性
     })
 
     const responseContent = completion.choices[0].message.content
@@ -275,7 +282,7 @@ ${perfumeDatabase}
     } catch (parseError) {
       console.error('解析 OpenAI 回應失敗:', parseError)
       console.log('原始回應:', responseContent)
-      
+
       // 如果解析失敗，返回備用推薦
       return getFallbackRecommendations(inventoryRows)
     }
@@ -310,21 +317,21 @@ function getFallbackRecommendations(inventoryRows: InventoryRow[] = []) {
       ]
     },
     secondary: {
-      name: "假木質調中性香水", 
+      name: "假木質調中性香水",
       number: "No. 002",
       brand: "Aesop",
       description: "如果您想嘗試不同風格，這款木質調香水會帶來溫暖沉穩的感覺。",
       confidence: 72,
       reasons: [
         "木質調增添成熟魅力",
-        "適合正式場合使用", 
+        "適合正式場合使用",
         "中性香調適合各種性格"
       ]
     },
     alternative: {
       name: "假花香調香水",
       number: "No. 003",
-      brand: "Diptyque", 
+      brand: "Diptyque",
       description: "溫柔的花香調，為您增添優雅氣質。",
       confidence: 68,
       reasons: [
@@ -378,11 +385,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`為用戶 ${userId} 生成推薦...`)
 
-    // 取得此用戶已出過的香水，避免重複推薦
+    // 取得此用戶已出貨過的香水，避免重複推薦
+    // 只查詢已出貨（shipped/shippped）或已送達（delivered）的訂單
     let usedPerfumes: string[] = []
     try {
+      // 查詢已出貨和已送達的訂單
       const historyResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/orders?select=perfume_name&user_id=eq.${userId}&perfume_name=not.is.null`,
+        `${SUPABASE_URL}/rest/v1/orders?select=perfume_name&user_id=eq.${userId}&perfume_name=not.is.null&order_status=in.(shipped,shippped,delivered)`,
         {
           headers: {
             apikey: SUPABASE_KEY,
@@ -397,6 +406,11 @@ export async function POST(request: NextRequest) {
         usedPerfumes = (history || [])
           .map((item: any) => item?.perfume_name)
           .filter(Boolean)
+
+        // 去重
+        usedPerfumes = [...new Set(usedPerfumes)]
+
+        console.log(`找到用戶 ${userId} 已出貨的香水:`, usedPerfumes)
       } else {
         console.warn('讀取歷史香水失敗，仍繼續生成推薦')
       }
