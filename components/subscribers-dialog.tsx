@@ -169,9 +169,10 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
           [subscriber.id]: data.recommendations
         }))
         // 設置成功消息，3秒後自動消失
-        setSuccessMessage('✅ 推薦生成成功！結果已顯示在下方')
+        setSuccessMessage('推薦生成成功！結果已顯示在下方')
         setTimeout(() => setSuccessMessage(null), 3000)
-        console.log('推薦生成成功！', data.recommendations)
+        console.log('[v0] 推薦生成成功！', data.recommendations)
+        console.log('[v0] 使用的 Sheet ID (部分):', data.debug?.sheetId || '未提供')
       } else {
         const errorData = await response.json()
         console.error('生成推薦失敗:', errorData.error)
@@ -369,7 +370,7 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                                 ? 'bg-red-100 text-red-800 border-red-300'
                                 : 'bg-gray-100 text-gray-800 border-gray-300'
                             }`}>
-                            {subscriber.subscription_status === 'active' ? '✓ 已訂閱' : 
+                            {subscriber.subscription_status === 'active' ? '��� 已訂閱' : 
                              subscriber.subscription_status === 'terminated' ? '✗ 已終止' : 
                              '⏳ 待訂閱'}
                             </span>
