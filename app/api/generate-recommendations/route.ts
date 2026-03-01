@@ -378,11 +378,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`為用戶 ${userId} 生成推薦...`)
 
-    // 取得此用戶已出過的香水，避免重複推薦
+    // 取得此用戶已出貨過的香水，避免重複推薦
+    // 只查詢已出貨（shipped/shippped）或已送達（delivered）的訂單
     let usedPerfumes: string[] = []
     try {
+      // 查詢已出貨和已送達的訂單
       const historyResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/orders?select=perfume_name&user_id=eq.${userId}&perfume_name=not.is.null`,
+        `${SUPABASE_URL}/rest/v1/orders?select=perfume_name&user_id=eq.${userId}&perfume_name=not.is.null&order_status=in.(shipped,shippped,delivered)`,
         {
           headers: {
             apikey: SUPABASE_KEY,
@@ -397,6 +399,11 @@ export async function POST(request: NextRequest) {
         usedPerfumes = (history || [])
           .map((item: any) => item?.perfume_name)
           .filter(Boolean)
+        
+        // 去重
+        usedPerfumes = [...new Set(usedPerfumes)]
+        
+        console.log(`找到用戶 ${userId} 已出貨的香水:`, usedPerfumes)
       } else {
         console.warn('讀取歷史香水失敗，仍繼續生成推薦')
       }
