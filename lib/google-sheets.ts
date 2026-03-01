@@ -116,7 +116,8 @@ export async function fetchPerfumeInventory(range = "A:I"): Promise<InventoryRow
 
   return rows.slice(headerRowIndex + 1).flatMap((row) => {
     const cells = row.map((cell) => (cell ?? "").toString().trim())
-    const number = noIdx >= 0 ? (cells[noIdx] || "") : ""
+    const rawNumber = noIdx >= 0 ? (cells[noIdx] || "") : ""
+    const number = normalizeNumber(rawNumber) // 標準化編號格式
     const brand = cells[brandIdx] || lastBrand
     const product = cells[productIdx]
     const unitsCell = cells[unitsIdx]
@@ -226,8 +227,9 @@ export async function fetchPerfumeIntroduction(range = "A:I"): Promise<Array<{ t
     const unitsCell = cells[unitsIdx] || ""
     const units = unitsCell === "" || !unitsCell ? "0" : String(unitsCell)
 
+    const rawNumber = noIdx >= 0 ? (cells[noIdx] || "") : ""
     const entry: IntroductionEntry = {
-      "No.": noIdx >= 0 ? (cells[noIdx] || "") : "",
+      "No.": normalizeNumber(rawNumber), // 標準化編號格式
       "Brand Name": brand,
       "Product Name": product,
       "Units": units,
@@ -294,6 +296,19 @@ function findColumnIndex(header: string[], candidates: string[]): number {
 
 function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim()
+}
+
+/**
+ * 標準化香水編號格式
+ * 移除 "No." 或 "No" 前綴，只保留數字部分
+ * 例如: "No.1" -> "1", "No. 2" -> "2", "3" -> "3"
+ */
+function normalizeNumber(value: string): string {
+  if (!value) return ""
+  // 移除 "No." 或 "No" 前綴（不區分大小寫），以及前後空格
+  return value
+    .replace(/^no\.?\s*/i, "")
+    .trim()
 }
 
 /**
