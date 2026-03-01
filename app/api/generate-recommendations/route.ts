@@ -211,10 +211,13 @@ ${perfumeDatabase}
 
 請根據用戶的測驗答案，從香水資料庫中選擇最適合的香水進行推薦。加入 10–20% 的隨機性，讓每次結果不同，但不能違反使用者的核心偏好。
 
-**重要要求：品牌多樣性**
-- 3個推薦應盡量來自不同品牌，避免重複推薦同一品牌
-- 如果資料庫中某品牌香水較多，請主動選擇其他品牌的香水以增加多樣性
-- 只有在沒有其他合適選擇時，才允許同一品牌出現兩次，但絕不允許三個推薦都來自同一品牌
+**【強制規則】品牌多樣性 - 必須嚴格遵守**
+⚠️ 這是最高優先級的規則：
+1. primary、secondary、alternative 必須來自 3 個不同品牌
+2. 絕對不允許任何兩個推薦來自同一品牌
+3. 在選擇每個推薦之前，檢查該品牌是否已被使用
+4. 即使某品牌有更適合的香水，如果該品牌已被選中，必須選擇其他品牌
+5. 如果違反此規則，整個推薦將被視為無效
 
 請提供以下格式的推薦：
 1. 主要推薦 (最符合用戶偏好，85-95%匹配度)
@@ -247,7 +250,16 @@ ${perfumeDatabase}
       messages: [
         {
           role: "system",
-          content: "你是一位專業的香水顧問，擁有豐富的香水知識和個性化推薦經驗。請根據用戶的測驗答案提供專業、準確的香水推薦。在推薦時，請確保品牌多樣性，只有在沒有其他合適選擇時，才允許同一品牌出現兩次，但絕不允許三個推薦都來自同一品牌。"
+          content: `你是一位專業的香水顧問，擁有豐富的香水知識和個性化推薦經驗。請根據用戶的測驗答案提供專業、準確的香水推薦。
+
+【最重要規則 - 品牌多樣性】
+這是最高優先級的規則，必須嚴格遵守：
+1. 三個推薦必須來自三個不同的品牌
+2. 絕對禁止任何兩個推薦來自同一品牌
+3. 在選擇香水之前，先確認品牌是否已被使用
+4. 如果某品牌已經被選中，即使它有更適合的香水，也必須選擇其他品牌
+
+違反品牌多樣性規則是不可接受的。`
         },
         {
           role: "user",
@@ -278,7 +290,9 @@ ${perfumeDatabase}
       const recommendations = JSON.parse(cleanedContent)
       const withInventory = attachInventoryMetadata(recommendations, inventoryMap)
       const filtered = filterOutUsedPerfumes(withInventory, excludeSet, inventoryRows)
-      return filtered
+      // 確保品牌多樣性 - 如果 AI 返回重複品牌，自動替換
+      const diversified = ensureBrandDiversity(filtered, inventoryRows, excludeSet)
+      return diversified
     } catch (parseError) {
       console.error('解析 OpenAI 回應失敗:', parseError)
       console.log('原始回應:', responseContent)
@@ -365,6 +379,105 @@ function filterOutUsedPerfumes(recommendations: any, excludeSet: Set<string>, in
   )
   const fallback = getInventoryFallbackRecommendations(available)
   return fallback || filtered
+}
+
+/**
+ * 檢查並修正品牌重複問題
+ * 如果有重複品牌，嘗試從庫存中找其他品牌的香水替換
+ */
+function ensureBrandDiversity(
+  recommendations: any,
+  inventoryRows: InventoryRow[],
+  excludeSet: Set<string>
+): any {
+  if (!recommendations) return recommendations
+
+  const keys: Array<'primary' | 'secondary' | 'alternative'> = ['primary', 'secondary', 'alternative']
+  const result = { ...recommendations }
+  
+  // 收集所有推薦的品牌
+  const usedBrands: Map<string, string[]> = new Map() // brand -> [key1, key2, ...]
+  
+  keys.forEach((key) => {
+    const rec = result[key]
+    if (rec?.brand) {
+      const brandKey = normalizeKey(rec.brand)
+      if (!usedBrands.has(brandKey)) {
+        usedBrands.set(brandKey, [])
+      }
+      usedBrands.get(brandKey)!.push(key)
+    }
+  })
+
+  // 檢查是否有品牌出現超過一次
+  const duplicateBrands = Array.from(usedBrands.entries()).filter(([_, positions]) => positions.length > 1)
+  
+  if (duplicateBrands.length === 0) {
+    console.log('品牌多樣性檢查通過：無重複品牌')
+    return result
+  }
+
+  console.log('發現重複品牌，嘗試替換:', duplicateBrands.map(([brand]) => brand))
+
+  // 收集已使用的品牌和香水名稱
+  const usedBrandKeys = new Set(keys.map((key) => normalizeKey(result[key]?.brand)).filter(Boolean))
+  const usedPerfumeNames = new Set(keys.map((key) => normalizeKey(result[key]?.name)).filter(Boolean))
+
+  // 找出可用的其他品牌香水
+  const availableAlternatives = inventoryRows.filter((row) => {
+    const brandKey = normalizeKey(row.brand)
+    const nameKey = normalizeKey(row.product)
+    return (
+      row.unitsLeft > 0 &&
+      !usedBrandKeys.has(brandKey) &&
+      !usedPerfumeNames.has(nameKey) &&
+      !excludeSet.has(nameKey)
+    )
+  })
+
+  // 對於每個重複的品牌，保留第一個位置，替換後面的
+  for (const [brandKey, positions] of duplicateBrands) {
+    // 保留第一個（通常是 primary），替換後面的
+    for (let i = 1; i < positions.length; i++) {
+      const positionToReplace = positions[i]
+      
+      if (availableAlternatives.length === 0) {
+        console.log(`沒有其他品牌可用，無法替換 ${positionToReplace}`)
+        continue
+      }
+
+      // 隨機選擇一個不同品牌的香水
+      const randomIndex = Math.floor(Math.random() * availableAlternatives.length)
+      const replacement = availableAlternatives[randomIndex]
+      
+      console.log(`將 ${positionToReplace} 的 ${result[positionToReplace]?.name} (${result[positionToReplace]?.brand}) 替換為 ${replacement.product} (${replacement.brand})`)
+
+      // 計算新的匹配度（根據位置調整）
+      const baseConfidence = positionToReplace === 'secondary' ? 75 : 68
+      const confidenceVariation = Math.floor(Math.random() * 10) - 5
+      
+      result[positionToReplace] = {
+        name: replacement.product,
+        number: '',
+        brand: replacement.brand || '精選香水',
+        description: `${replacement.product} 是一款來自 ${replacement.brand || '精選品牌'} 的香水，為您提供不同的香氛體驗。`,
+        confidence: baseConfidence + confidenceVariation,
+        reasons: [
+          '為您提供不同品牌的選擇',
+          '庫存充足，可立即體驗',
+          '拓展您的香水體驗範圍'
+        ],
+        unitsLeft: replacement.unitsLeft,
+      }
+
+      // 從可用列表中移除已使用的
+      availableAlternatives.splice(randomIndex, 1)
+      usedBrandKeys.add(normalizeKey(replacement.brand))
+      usedPerfumeNames.add(normalizeKey(replacement.product))
+    }
+  }
+
+  return result
 }
 
 /**
