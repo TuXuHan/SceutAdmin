@@ -818,7 +818,15 @@ function OrdersPageContent() {
                   await handleFillMissingAddresses(true)
                   // 3. 然後執行自動生成訂單（跳過單獨重新載入）
                   await handleAutoGenerateOrders(true)
-                  // 4. 最後統一重新載入訂單列表
+                  // 4. 將出貨時間超過 5 天的訂單狀態改為已送達（updated_at 維持為出貨時間）
+                  try {
+                    const res = await fetch('/api/orders/auto-mark-delivered', { method: 'POST' })
+                    const data = await res.json()
+                    if (res.ok && data.success && data.updated > 0) {
+                      setAutoOrderMessage(prev => prev ? `${prev}；${data.message}` : `✅ ${data.message}`)
+                    }
+                  } catch (_) {}
+                  // 5. 最後統一重新載入訂單列表
                   await loadOrders(true)
                 }}
                 disabled={autoGeneratingOrders || fillingPhones || fillingAddresses}
