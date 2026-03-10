@@ -169,9 +169,10 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
           [subscriber.id]: data.recommendations
         }))
         // 設置成功消息，3秒後自動消失
-        setSuccessMessage('✅ 推薦生成成功！結果已顯示在下方')
+        setSuccessMessage('推薦生成成功！結果已顯示在下方')
         setTimeout(() => setSuccessMessage(null), 3000)
-        console.log('推薦生成成功！', data.recommendations)
+        console.log('[v0] 推薦生成成功！', data.recommendations)
+        console.log('[v0] 使用的 Sheet ID (部分):', data.debug?.sheetId || '未提供')
       } else {
         const errorData = await response.json()
         console.error('生成推薦失敗:', errorData.error)

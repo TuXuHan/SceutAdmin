@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+// Rebuild trigger: env vars update
 const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,

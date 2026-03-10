@@ -488,6 +488,9 @@ function ensureBrandDiversity(
  * 請求參數: { userId: string, quizAnswers: any }
  */
 export async function POST(request: NextRequest) {
+  console.log("[v0] generate-recommendations API called")
+  console.log("[v0] GOOGLE_SHEET_ID =", process.env.GOOGLE_SHEET_ID)
+  
   try {
     const { userId, quizAnswers } = await request.json()
 
@@ -536,11 +539,15 @@ export async function POST(request: NextRequest) {
     // 使用 OpenAI 生成個人化推薦
     const recommendations = await generatePerfumeRecommendations(quizAnswers, usedPerfumes)
 
+    const sheetId = process.env.GOOGLE_SHEET_ID || ''
     return NextResponse.json({
       success: true,
       recommendations: recommendations,
       generatedAt: new Date().toISOString(),
-      message: "推薦生成成功"
+      message: "推薦生成成功",
+      debug: {
+        sheetId: sheetId ? `${sheetId.slice(0, 8)}...${sheetId.slice(-4)}` : 'NOT SET'
+      }
     })
 
   } catch (error) {
