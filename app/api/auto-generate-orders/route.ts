@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { generatePerfumeRecommendations } from "@/app/api/generate-recommendations/route"
 import { buildRecommendedPerfumes, parseOrderMetadata, serializeOrderMetadata } from "@/lib/order-metadata"
 
@@ -35,7 +35,33 @@ function normalizeDate(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
-function getDaysUntil(targetDateString?: string | null) {
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseSimulationDate(dateString?: string | null) {
+  if (!dateString) {
+    return null
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [year, month, day] = dateString.split("-").map(Number)
+    const parsedLocal = new Date(year, month - 1, day)
+    return Number.isNaN(parsedLocal.getTime()) ? null : parsedLocal
+  }
+
+  const parsed = new Date(dateString)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed
+}
+
+function getDaysUntil(targetDateString?: string | null, baseDate = new Date()) {
   if (!targetDateString) {
     return null
   }
@@ -45,10 +71,14 @@ function getDaysUntil(targetDateString?: string | null) {
     return null
   }
 
-  const today = normalizeDate(new Date())
+  const today = normalizeDate(baseDate)
   const targetDay = normalizeDate(target)
   const diffMs = targetDay.getTime() - today.getTime()
   return Math.round(diffMs / (1000 * 60 * 60 * 24))
+}
+
+function isWithinPrebillingWindow(daysUntilPayment: number | null) {
+  return daysUntilPayment !== null && daysUntilPayment >= 0 && daysUntilPayment <= TARGET_DAYS_BEFORE_PAYMENT
 }
 
 function getPaymentData(subscription: any) {
@@ -64,11 +94,13 @@ function resolveMerchantOrderNo(subscription: any): string | null {
   const paymentData = getPaymentData(subscription)
 
   const candidates = [
-    subscription?.period_no,
+    subscription?.merchant_order_no,
+    subscription?.merchantOrderNo,
+    paymentData?.merchant_order_no,
+    paymentData?.merchantOrderNo,
     paymentData?.MerchantOrderNo,
     paymentData?.MerOrderNo,
-    paymentData?.merchantOrderNo,
-    paymentData?.merchant_order_no,
+    subscription?.period_no,
   ]
 
   for (const candidate of candidates) {
@@ -226,8 +258,41 @@ function hasExistingGeneratedOrder(existingOrders: any[], merchantOrderNo: strin
   })
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const requestBody = await request.json().catch(() => ({}))
+    const dryRun = Boolean(requestBody?.dryRun)
+    const simulationDate = typeof requestBody?.targetDate === "string" ? requestBody.targetDate : null
+    return await handleAutoGenerateOrders(dryRun, simulationDate)
+  } catch (error) {
+    console.error("auto-generate-orders error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "自動生成訂單失敗",
+      },
+      { status: 500 },
+    )
+  }
+}
+
+export async function GET() {
+  return handleAutoGenerateOrders(true)
+}
+
+async function handleAutoGenerateOrders(dryRun: boolean, simulationDateString?: string | null) {
+  try {
+    const simulationDate = parseSimulationDate(simulationDateString)
+    if (simulationDateString && !simulationDate) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "targetDate 格式無效，請使用可被 Date 解析的日期字串，例如 2026-04-20",
+        },
+        { status: 400 },
+      )
+    }
+
     const subscribersResponse = await fetch(
       `${SUPABASE_URL}/rest/v1/subscribers?select=*&subscription_status=in.(active,paid)&order=next_payment_date.asc`,
       {
@@ -249,11 +314,13 @@ export async function POST() {
       skippedMissingMerchantOrderNo: 0,
       skippedMissingProfile: 0,
       errors: [] as string[],
+      preview: [] as Array<Record<string, any>>,
+      simulatedRunDate: formatLocalDate(normalizeDate(simulationDate || new Date())),
     }
 
     for (const subscription of Array.isArray(subscribers) ? subscribers : []) {
-      const daysUntilPayment = getDaysUntil(subscription?.next_payment_date)
-      if (daysUntilPayment !== TARGET_DAYS_BEFORE_PAYMENT) {
+      const daysUntilPayment = getDaysUntil(subscription?.next_payment_date, simulationDate || new Date())
+      if (!isWithinPrebillingWindow(daysUntilPayment)) {
         continue
       }
 
@@ -331,6 +398,26 @@ export async function POST() {
           orderPayload.shipping_address = shippingAddress
         }
 
+        if (dryRun) {
+          results.preview.push({
+            subscriberId: subscription.id,
+            userId: subscription.user_id || null,
+            name: subscription.name,
+            email: subscription.email,
+            merchantOrderNo,
+            targetPeriodNo,
+            totalPeriods,
+            nextPaymentDate: subscription.next_payment_date || null,
+            orderStatus: orderPayload.order_status,
+            shopifyOrderId: orderPayload.shopify_order_id,
+            amount: orderPayload.total_price,
+            deliveryMethod: orderPayload.delivery_method || null,
+            shippingAddress: orderPayload.shipping_address || null,
+            recommendedPerfumes,
+          })
+          continue
+        }
+
         const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
           method: "POST",
           headers: createHeaders({
@@ -354,8 +441,13 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
+      dryRun,
       message:
-        results.generatedOrders > 0
+        dryRun
+          ? (results.preview.length > 0
+              ? `dry run 完成，找到 ${results.preview.length} 筆會建立的預生成訂單`
+              : "dry run 完成，沒有符合條件且需要建立的新訂單")
+          : results.generatedOrders > 0
           ? `已為 ${results.generatedOrders} 位訂閱者建立扣款前三天的預生成訂單`
           : "沒有符合條件且需要建立的新訂單",
       ...results,
