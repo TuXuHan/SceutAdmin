@@ -35,8 +35,10 @@ export async function GET() {
 
 // POST - 創建新訂單
 export async function POST(request: NextRequest) {
+  let orderData: any = null
+
   try {
-    const orderData = await request.json()
+    orderData = await request.json()
     
     // 為新訂單添加ID和時間戳，只包含orders表實際存在的欄位
     const now = new Date().toISOString()
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
       perfume_name: orderData.perfume_name || null,
       delivery_method: orderData.delivery_method || null,
       "711": orderData["711"] || null,
+      notes: orderData.notes || null,
       created_at: now,
       updated_at: now,
       last_checked: now,

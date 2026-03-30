@@ -32,6 +32,7 @@ import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { SubscribersDialog } from "@/components/subscribers-dialog"
 import { PartnerShippingDialog } from "@/components/partner-shipping-dialog"
+import { getRecommendedPerfumes } from "@/lib/order-metadata"
 
 interface Order {
   id: string
@@ -56,6 +57,7 @@ interface Order {
   created_at?: string
   updated_at?: string
   ship_date?: string | null
+  notes?: string | null
 }
 
 interface OrderStats {
@@ -160,7 +162,7 @@ function OrdersPageContent() {
   const calculateOrderStats = (orders: Order[]): OrderStats => {
     return {
       total: orders.length,
-      pending: orders.filter(order => order.order_status === 'pending').length,
+      pending: orders.filter(order => ['pending', 'created', 'confirmed'].includes(order.order_status)).length,
       processing: orders.filter(order => order.order_status === 'processing').length,
       shipped: orders.filter(order => order.order_status === 'shipped' || order.order_status === 'shippped').length,
       delivered: orders.filter(order => order.order_status === 'delivered').length,
@@ -432,7 +434,7 @@ function OrdersPageContent() {
       
       if (response.ok && result.success) {
         if (result.generatedOrders > 0) {
-          setAutoOrderMessage(`✅ 成功生成 ${result.generatedOrders} 個待處理訂單${result.skippedOrders > 0 ? `，跳過 ${result.skippedOrders} 個已有訂單的訂閱者` : ''}`)
+          setAutoOrderMessage(`✅ 成功生成 ${result.generatedOrders} 個預生成訂單${result.skippedOrders > 0 ? `，跳過 ${result.skippedOrders} 個已有訂單的訂閱者` : ''}`)
         } else {
           setAutoOrderMessage(`ℹ️ ${result.message}`)
         }
@@ -557,6 +559,9 @@ function OrdersPageContent() {
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
+      case 'created':
+        return 'outline'
+      case 'confirmed':
       case 'pending':
         return 'outline' // 灰色邊框 - 待處理
       case 'processing':
@@ -575,6 +580,10 @@ function OrdersPageContent() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'created':
+        return 'bg-slate-100 text-slate-800 border-slate-300'
+      case 'confirmed':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300'
       case 'pending':
         return 'bg-gray-100 text-gray-800 border-gray-300' // 灰色 - 待處理
       case 'processing':
@@ -593,6 +602,10 @@ function OrdersPageContent() {
 
   const getStatusText = (status: string) => {
     switch (status) {
+      case 'created':
+        return '已生成'
+      case 'confirmed':
+        return '已確認付款'
       case 'pending':
         return '待處理'
       case 'processing':
@@ -955,6 +968,8 @@ function OrdersPageContent() {
                   className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm min-w-0 flex-1 sm:flex-none"
                 >
                   <option value="all">所有狀態</option>
+                  <option value="created">⚪ 已生成</option>
+                  <option value="confirmed">🟢 已確認付款</option>
                   <option value="pending">🟫 待處理</option>
                   <option value="processing">🔵 處理中</option>
                   <option value="shipped">🟣 已出貨</option>
@@ -1002,7 +1017,11 @@ function OrdersPageContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredOrders.map((order: any) => (
+                {filteredOrders.map((order: any) => {
+                  const recommendedPerfumes = getRecommendedPerfumes(order.notes)
+                  const isExpandableStatus = ['pending', 'created', 'confirmed'].includes(order.order_status)
+
+                  return (
                   <div key={order.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-1">
@@ -1010,8 +1029,8 @@ function OrdersPageContent() {
                           <h3 className="font-medium text-gray-800 text-sm sm:text-base">
                             訂單 #{order.shopify_order_id || '無貨號'}
                           </h3>
-                          {/* 下拉按鈕 - 只在待處理訂單時顯示 */}
-                          {order.order_status === 'pending' && (
+                          {/* 下拉按鈕 - 可展開查看預生成與配送細節 */}
+                          {isExpandableStatus && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1095,6 +1114,26 @@ function OrdersPageContent() {
                         </div>
                       </div>
                     )}
+
+                    {recommendedPerfumes.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-start gap-2 text-sm">
+                          <Package className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <span className="text-gray-600">預推薦香水:</span>
+                            {recommendedPerfumes.map((perfume) => (
+                              <div key={`${order.id}-${perfume.type}`} className="text-gray-800">
+                                <span className="font-medium">{perfume.label}</span>
+                                {"："}
+                                {perfume.name}
+                                {perfume.brand ? ` (${perfume.brand})` : ""}
+                                {typeof perfume.confidence === "number" ? ` ${perfume.confidence}%` : ""}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                       <div className="text-sm text-gray-600">
@@ -1135,8 +1174,8 @@ function OrdersPageContent() {
                       </div>
                     )}
 
-                    {/* 展開的詳細訊息 - 只在待處理訂單且展開時顯示 */}
-                    {order.order_status === 'pending' && expandedOrder === order.id && (
+                    {/* 展開的詳細訊息 */}
+                    {isExpandableStatus && expandedOrder === order.id && (
                       <div className="mt-4 pt-4 border-t border-gray-200">
                         <div className="bg-gray-50 rounded-lg p-4">
                           <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
@@ -1237,6 +1276,8 @@ function OrdersPageContent() {
                                 onChange={(e) => setTempOrderStatus(e.target.value)}
                                 className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm min-w-0 flex-1 sm:flex-none"
                               >
+                                <option value="created">⚪ 已生成</option>
+                                <option value="confirmed">🟢 已確認付款</option>
                                 <option value="pending">🟫 待處理</option>
                                 <option value="processing">🔵 處理中</option>
                                 <option value="shipped">🟣 已出貨</option>
@@ -1334,7 +1375,8 @@ function OrdersPageContent() {
                       </div>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

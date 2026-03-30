@@ -33,12 +33,67 @@ function parseNewebPayDate(dateStr?: string) {
   return isNaN(d.getTime()) ? null : d
 }
 
+function addMonthsKeepingBillingDay(baseDate: Date, monthsToAdd: number, billingDay: number = baseDate.getDate()): Date {
+  const result = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth() + monthsToAdd,
+    1,
+    baseDate.getHours(),
+    baseDate.getMinutes(),
+    baseDate.getSeconds(),
+    baseDate.getMilliseconds()
+  )
+  const lastDayOfMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate()
+  result.setDate(Math.min(billingDay, lastDayOfMonth))
+  return result
+}
+
+function addYearsKeepingBillingDay(baseDate: Date, yearsToAdd: number): Date {
+  const result = new Date(
+    baseDate.getFullYear() + yearsToAdd,
+    baseDate.getMonth(),
+    1,
+    baseDate.getHours(),
+    baseDate.getMinutes(),
+    baseDate.getSeconds(),
+    baseDate.getMilliseconds()
+  )
+  const lastDayOfMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate()
+  result.setDate(Math.min(baseDate.getDate(), lastDayOfMonth))
+  return result
+}
+
+function addBillingPeriods(baseDate: Date, periodsToAdd: number, periodType: string = "M"): Date {
+  if (periodType === "M") {
+    return addMonthsKeepingBillingDay(baseDate, periodsToAdd, baseDate.getDate())
+  } else if (periodType === "D") {
+    const next = new Date(baseDate)
+    next.setDate(next.getDate() + periodsToAdd)
+    return next
+  } else if (periodType === "W") {
+    const next = new Date(baseDate)
+    next.setDate(next.getDate() + (periodsToAdd * 7))
+    return next
+  } else if (periodType === "Y") {
+    return addYearsKeepingBillingDay(baseDate, periodsToAdd)
+  }
+
+  return new Date(baseDate)
+}
+
 function calculateCurrentPeriod(createdAt: Date, periodType: string = "M"): number {
   const now = new Date()
   const diffMs = now.getTime() - createdAt.getTime()
   
   if (periodType === "M") {
-    const months = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30))
+    let months = (
+      (now.getFullYear() - createdAt.getFullYear()) * 12 +
+      (now.getMonth() - createdAt.getMonth())
+    )
+    const currentCycleDate = addBillingPeriods(createdAt, months, periodType)
+    if (now.getTime() < currentCycleDate.getTime()) {
+      months -= 1
+    }
     return Math.max(1, months + 1)
   } else if (periodType === "D") {
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
@@ -47,27 +102,19 @@ function calculateCurrentPeriod(createdAt: Date, periodType: string = "M"): numb
     const weeks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7))
     return Math.max(1, weeks + 1)
   } else if (periodType === "Y") {
-    const years = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365))
+    let years = now.getFullYear() - createdAt.getFullYear()
+    const currentCycleDate = addBillingPeriods(createdAt, years, periodType)
+    if (now.getTime() < currentCycleDate.getTime()) {
+      years -= 1
+    }
     return Math.max(1, years + 1)
   }
   
   return 1
 }
 
-function calculateNextPaymentDate(lastPaymentDate: Date, periodType: string = "M"): Date {
-  const next = new Date(lastPaymentDate)
-  
-  if (periodType === "M") {
-    next.setMonth(next.getMonth() + 1)
-  } else if (periodType === "D") {
-    next.setDate(next.getDate() + 1)
-  } else if (periodType === "W") {
-    next.setDate(next.getDate() + 7)
-  } else if (periodType === "Y") {
-    next.setFullYear(next.getFullYear() + 1)
-  }
-  
-  return next
+function calculateNextPaymentDate(createdAt: Date, currentPeriod: number, periodType: string = "M"): Date {
+  return addBillingPeriods(createdAt, currentPeriod, periodType)
 }
 
 function extractTotalTimes(paymentData: any): number | null {
@@ -156,18 +203,8 @@ export async function POST(request: NextRequest) {
         const periodType = extractPeriodType(subscription.payment_data)
         const currentPeriod = calculateCurrentPeriod(createdAt, periodType)
 
-        const lastPaymentDate = new Date(createdAt)
-        if (periodType === "M") {
-          lastPaymentDate.setMonth(lastPaymentDate.getMonth() + (currentPeriod - 1))
-        } else if (periodType === "D") {
-          lastPaymentDate.setDate(lastPaymentDate.getDate() + (currentPeriod - 1))
-        } else if (periodType === "W") {
-          lastPaymentDate.setDate(lastPaymentDate.getDate() + ((currentPeriod - 1) * 7))
-        } else if (periodType === "Y") {
-          lastPaymentDate.setFullYear(lastPaymentDate.getFullYear() + (currentPeriod - 1))
-        }
-
-        const nextPaymentDate = calculateNextPaymentDate(lastPaymentDate, periodType)
+        const lastPaymentDate = addBillingPeriods(createdAt, currentPeriod - 1, periodType)
+        const nextPaymentDate = calculateNextPaymentDate(createdAt, currentPeriod, periodType)
 
         let subscriptionStatus = subscription.subscription_status
         if (totalTimes && currentPeriod >= totalTimes) {
@@ -280,12 +317,8 @@ export async function GET(request: NextRequest) {
         const periodType = extractPeriodType(sub.payment_data)
         const currentPeriod = calculateCurrentPeriod(createdAt, periodType)
 
-        const lastPaymentDate = new Date(createdAt)
-        if (periodType === "M") {
-          lastPaymentDate.setMonth(lastPaymentDate.getMonth() + (currentPeriod - 1))
-        }
-
-        const nextPaymentDate = calculateNextPaymentDate(lastPaymentDate, periodType)
+        const lastPaymentDate = addBillingPeriods(createdAt, currentPeriod - 1, periodType)
+        const nextPaymentDate = calculateNextPaymentDate(createdAt, currentPeriod, periodType)
 
         let subscriptionStatus = sub.subscription_status
         if (totalTimes && currentPeriod >= totalTimes) {

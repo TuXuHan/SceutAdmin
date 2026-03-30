@@ -152,7 +152,7 @@ function getInventoryFallbackRecommendations(inventoryRows: InventoryRow[]) {
 /**
  * 使用 OpenAI 生成香水推薦
  */
-async function generatePerfumeRecommendations(quizAnswers: any, excludePerfumes: string[] = []) {
+export async function generatePerfumeRecommendations(quizAnswers: any, excludePerfumes: string[] = []) {
   let inventoryRows: InventoryRow[] = []
   let inventoryMap = new Map<string, InventoryRow>()
   const excludeSet = new Set(excludePerfumes.map(normalizeKey).filter(Boolean))
