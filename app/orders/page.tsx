@@ -32,7 +32,7 @@ import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { SubscribersDialog } from "@/components/subscribers-dialog"
 import { PartnerShippingDialog } from "@/components/partner-shipping-dialog"
-import { getRecommendedPerfumes, serializeOrderMetadata } from "@/lib/order-metadata"
+import { getRecommendedPerfumes } from "@/lib/order-metadata"
 
 interface Order {
   id: string
@@ -49,6 +49,7 @@ interface Order {
   currency?: string
   payment_status?: string
   shipping_status?: string
+  notes?: string
   cancellation_note?: string
   user_id?: string
   perfume_name?: string
@@ -109,7 +110,6 @@ function OrdersPageContent() {
   const [fillAddressesMessage, setFillAddressesMessage] = useState<string | null>(null)
   const [perfumes, setPerfumes] = useState<Array<{ number: string; name: string; brand: string }>>([])
   const [loadingPerfumes, setLoadingPerfumes] = useState(false)
-  const [syncingRecommendedNumbers, setSyncingRecommendedNumbers] = useState(false)
   const { loading, startLoading, stopLoading, shouldSkipLoad, resetLoadingState } = useDebouncedLoading({
     debounceMs: 60000, // 60 秒防抖
     maxRetries: 1
@@ -169,45 +169,6 @@ function OrdersPageContent() {
       cancelled: orders.filter(order => order.order_status === 'cancelled').length,
       partner: orders.filter(order => isPartnerOrder(order)).length
     }
-  }
-
-  const normalizePerfumeKey = (value?: string | null) => (value || "").trim().toLowerCase()
-
-  const buildRecommendedNumberBackfill = (
-    order: Order,
-    perfumeLookup: Map<string, { number: string; name: string; brand: string }>
-  ) => {
-    const recommendedPerfumes = getRecommendedPerfumes(order.notes)
-    if (recommendedPerfumes.length === 0) {
-      return null
-    }
-
-    let hasChanges = false
-    const updatedRecommendedPerfumes = recommendedPerfumes.map((perfume) => {
-      if ((perfume.number || "").trim()) {
-        return perfume
-      }
-
-      const matchedPerfume = perfumeLookup.get(normalizePerfumeKey(perfume.name))
-      if (!matchedPerfume?.number) {
-        return perfume
-      }
-
-      hasChanges = true
-      return {
-        ...perfume,
-        number: matchedPerfume.number,
-        brand: perfume.brand || matchedPerfume.brand || "",
-      }
-    })
-
-    if (!hasChanges) {
-      return null
-    }
-
-    return serializeOrderMetadata(order.notes, {
-      recommendedPerfumes: updatedRecommendedPerfumes,
-    })
   }
 
   const loadOrders = async (forceReload = false) => {
@@ -303,71 +264,6 @@ function OrdersPageContent() {
     // 載入香水列表
     loadPerfumes()
   }, [])
-
-  useEffect(() => {
-    if (syncingRecommendedNumbers || orders.length === 0 || perfumes.length === 0) {
-      return
-    }
-
-    const perfumeLookup = new Map(
-      perfumes.map((perfume) => [normalizePerfumeKey(perfume.name), perfume])
-    )
-
-    const ordersToUpdate = orders
-      .map((order) => ({
-        id: order.id,
-        notes: buildRecommendedNumberBackfill(order, perfumeLookup),
-      }))
-      .filter((order): order is { id: string; notes: string } => typeof order.notes === "string" && order.notes.length > 0)
-
-    if (ordersToUpdate.length === 0) {
-      return
-    }
-
-    let cancelled = false
-
-    const syncRecommendedNumbers = async () => {
-      try {
-        setSyncingRecommendedNumbers(true)
-
-        await Promise.all(
-          ordersToUpdate.map(async (order) => {
-            const response = await fetch("/api/orders", {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                id: order.id,
-                notes: order.notes,
-              }),
-            })
-
-            if (!response.ok) {
-              const errorText = await response.text()
-              throw new Error(`補齊推薦香水編號失敗: ${response.status} ${errorText}`)
-            }
-          })
-        )
-
-        if (!cancelled) {
-          await loadOrders(true)
-        }
-      } catch (error) {
-        console.error("補齊推薦香水編號失敗:", error)
-      } finally {
-        if (!cancelled) {
-          setSyncingRecommendedNumbers(false)
-        }
-      }
-    }
-
-    void syncRecommendedNumbers()
-
-    return () => {
-      cancelled = true
-    }
-  }, [orders, perfumes, syncingRecommendedNumbers])
 
   const loadSubscribersCount = async () => {
     try {
@@ -1229,7 +1125,6 @@ function OrdersPageContent() {
                               <div key={`${order.id}-${perfume.type}`} className="text-gray-800">
                                 <span className="font-medium">{perfume.label}</span>
                                 {"："}
-                                {perfume.number ? `${perfume.number} - ` : ""}
                                 {perfume.name}
                                 {perfume.brand ? ` (${perfume.brand})` : ""}
                                 {typeof perfume.confidence === "number" ? ` ${perfume.confidence}%` : ""}
