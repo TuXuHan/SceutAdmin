@@ -444,6 +444,18 @@ export function SubscribersDialog({ open, onClose }: SubscribersDialogProps) {
                             <span className="text-gray-800">{new Date(subscriber.next_payment_date).toLocaleDateString("zh-TW")}</span>
                           </div>
                         )}
+                        {Array.isArray(subscriber.shipped_perfumes) && subscriber.shipped_perfumes.length > 0 && (
+                          <div className="text-gray-600 sm:col-span-2">
+                            <div className="font-medium">已出貨香水:</div>
+                            <div className="mt-1 space-y-1 text-gray-800">
+                              {subscriber.shipped_perfumes.map((perfume: any, index: number) => (
+                                <div key={`${perfume.number || perfume.name}-${index}`}>
+                                  {perfume.number ? `${perfume.number} - ${perfume.name}` : perfume.name}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       
                       {subscriber.quiz_answers && (
