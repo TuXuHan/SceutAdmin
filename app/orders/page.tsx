@@ -32,7 +32,7 @@ import { useDebouncedLoading } from "@/hooks/use-debounced-loading"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { SubscribersDialog } from "@/components/subscribers-dialog"
 import { PartnerShippingDialog } from "@/components/partner-shipping-dialog"
-import { getRecommendedPerfumes } from "@/lib/order-metadata"
+import { getRecommendedPerfumes, serializeOrderMetadata } from "@/lib/order-metadata"
 
 interface Order {
   id: string
@@ -49,7 +49,6 @@ interface Order {
   currency?: string
   payment_status?: string
   shipping_status?: string
-  notes?: string
   cancellation_note?: string
   user_id?: string
   perfume_name?: string
@@ -68,6 +67,51 @@ interface OrderStats {
   delivered: number
   cancelled: number
   partner: number
+}
+
+function normalizePerfumeKey(value: string | null | undefined) {
+  return value
+    ? value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+    : ""
+}
+
+function buildRecommendedNumberBackfill(
+  order: Order,
+  perfumeLookup: Map<string, { number: string; name: string; brand: string }>
+) {
+  const recommendedPerfumes = getRecommendedPerfumes(order.notes)
+  if (recommendedPerfumes.length === 0) return null
+
+  let changed = false
+  const nextRecommendedPerfumes = recommendedPerfumes.map((perfume) => {
+    if (perfume.number) {
+      return perfume
+    }
+
+    const matchedPerfume = perfumeLookup.get(normalizePerfumeKey(perfume.name))
+    if (!matchedPerfume?.number) {
+      return perfume
+    }
+
+    changed = true
+    return {
+      ...perfume,
+      number: matchedPerfume.number,
+      name: matchedPerfume.name || perfume.name,
+      brand: perfume.brand || matchedPerfume.brand || "",
+    }
+  })
+
+  if (!changed) return null
+
+  return serializeOrderMetadata(order.notes, {
+    recommendedPerfumes: nextRecommendedPerfumes,
+  })
 }
 
 function OrdersPageContent() {
@@ -264,6 +308,60 @@ function OrdersPageContent() {
     // 載入香水列表
     loadPerfumes()
   }, [])
+
+  useEffect(() => {
+    if (orders.length === 0 || perfumes.length === 0) {
+      return
+    }
+
+    const perfumeLookup = new Map(
+      perfumes.map((perfume) => [
+        normalizePerfumeKey(perfume.name),
+        perfume,
+      ])
+    )
+
+    const targetStatuses = new Set(["pending", "created", "confirmed"])
+    const ordersToUpdate = orders
+      .filter((order) => targetStatuses.has((order.order_status || "").toLowerCase()))
+      .map((order) => ({
+        id: order.id,
+        notes: buildRecommendedNumberBackfill(order, perfumeLookup),
+      }))
+      .filter((order): order is { id: string; notes: string } => typeof order.notes === "string" && order.notes.length > 0)
+
+    if (ordersToUpdate.length === 0) {
+      return
+    }
+
+    ;(async () => {
+      try {
+        await Promise.all(
+          ordersToUpdate.map(async (order) => {
+            await fetch("/api/orders", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                id: order.id,
+                notes: order.notes,
+              }),
+            })
+          })
+        )
+
+        setOrders((currentOrders) =>
+          currentOrders.map((order) => {
+            const matched = ordersToUpdate.find((item) => item.id === order.id)
+            return matched ? { ...order, notes: matched.notes } : order
+          })
+        )
+      } catch (error) {
+        console.error("補寫推薦香水編號失敗:", error)
+      }
+    })()
+  }, [orders, perfumes])
 
   const loadSubscribersCount = async () => {
     try {
@@ -1125,6 +1223,7 @@ function OrdersPageContent() {
                               <div key={`${order.id}-${perfume.type}`} className="text-gray-800">
                                 <span className="font-medium">{perfume.label}</span>
                                 {"："}
+                                {perfume.number ? `${perfume.number} - ` : ""}
                                 {perfume.name}
                                 {perfume.brand ? ` (${perfume.brand})` : ""}
                                 {typeof perfume.confidence === "number" ? ` ${perfume.confidence}%` : ""}
