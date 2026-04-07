@@ -84,4 +84,5 @@ https://your-admin-domain/api/cron/gmail-payment-sync?bootstrap=true&dryRun=true
 
 - OAuth refresh token and polling state are stored in `Admin/.runtime/gmail-sync.json`.
 - The refresh token is encrypted with `GMAIL_SYNC_STORAGE_SECRET`.
+- If `GMAIL_SYNC_STORAGE_SECRET` changes, previously stored tokens can no longer be decrypted. Re-run `/api/gmail/oauth/start` or set a fresh `GMAIL_REFRESH_TOKEN`.
 - If you deploy on ephemeral serverless storage, move this state to a persistent store later. This implementation is ready for local/server environments with persistent disk.
