@@ -30,7 +30,8 @@ GMAIL_REFRESH_TOKEN=
 4. Start OAuth:
    - `GET /api/gmail/oauth/start`
 5. Complete consent using `sceut.tw@gmail.com`.
-6. After success, the refresh token is stored in `Admin/.runtime/gmail-sync.json`.
+6. Local development stores the token in `Admin/.runtime/gmail-sync.json`.
+7. For Vercel/production, create the Supabase table from `Admin/gmail_sync_state.sql`.
 
 ## Polling
 
@@ -82,7 +83,8 @@ https://your-admin-domain/api/cron/gmail-payment-sync?bootstrap=true&dryRun=true
 
 ## Storage notes
 
-- OAuth refresh token and polling state are stored in `Admin/.runtime/gmail-sync.json`.
+- Local development stores OAuth refresh token and polling state in `Admin/.runtime/gmail-sync.json`.
+- Vercel/production stores OAuth refresh token and polling state in Supabase table `gmail_sync_state`.
 - The refresh token is encrypted with `GMAIL_SYNC_STORAGE_SECRET`.
 - If `GMAIL_SYNC_STORAGE_SECRET` changes, previously stored tokens can no longer be decrypted. Re-run `/api/gmail/oauth/start` or set a fresh `GMAIL_REFRESH_TOKEN`.
-- If you deploy on ephemeral serverless storage, move this state to a persistent store later. This implementation is ready for local/server environments with persistent disk.
+- Run `Admin/gmail_sync_state.sql` once in Supabase SQL Editor before using production OAuth or cron polling.

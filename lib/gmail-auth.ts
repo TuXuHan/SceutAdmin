@@ -2,10 +2,13 @@ import { randomBytes, createCipheriv, createDecipheriv, createHash } from "crypt
 import { mkdir, readFile, writeFile } from "fs/promises"
 import path from "path"
 import { google } from "googleapis"
+import { createClient } from "@supabase/supabase-js"
 
 const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 const STORAGE_DIR = path.join(process.cwd(), ".runtime")
 const STORAGE_PATH = path.join(STORAGE_DIR, "gmail-sync.json")
+const SUPABASE_STATE_TABLE = "gmail_sync_state"
+const SUPABASE_STATE_KEY = "default"
 const OAUTH_STATE_COOKIE = "gmail_oauth_state"
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
 const PROCESSING_CACHE_LIMIT = 200
@@ -39,6 +42,12 @@ function getStorageSecret() {
 
 function deriveKey(secret: string) {
   return createHash("sha256").update(secret).digest()
+}
+
+function getSupabaseAdminClient() {
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL")
+  const key = requireEnv("SUPABASE_SERVICE_ROLE_KEY")
+  return createClient(url, key)
 }
 
 function encrypt(text: string, secret: string) {
@@ -88,6 +97,57 @@ async function writeStoredFile(next: StoredSyncFile) {
   })
 }
 
+function shouldPreferSupabaseStorage() {
+  return process.env.GMAIL_SYNC_USE_SUPABASE === "true" || process.env.VERCEL === "1"
+}
+
+async function readStoredStateFromSupabase(): Promise<StoredSyncFile> {
+  const supabase = getSupabaseAdminClient()
+  const { data, error } = await supabase
+    .from(SUPABASE_STATE_TABLE)
+    .select("value")
+    .eq("key", SUPABASE_STATE_KEY)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to read Gmail sync state from Supabase: ${error.message}`)
+  }
+
+  return typeof data?.value === "object" && data.value ? data.value : {}
+}
+
+async function writeStoredStateToSupabase(next: StoredSyncFile) {
+  const supabase = getSupabaseAdminClient()
+  const { error } = await supabase
+    .from(SUPABASE_STATE_TABLE)
+    .upsert(
+      {
+        key: SUPABASE_STATE_KEY,
+        value: next,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" }
+    )
+
+  if (error) {
+    throw new Error(`Failed to write Gmail sync state to Supabase: ${error.message}`)
+  }
+}
+
+async function readStoredState(): Promise<StoredSyncFile> {
+  if (shouldPreferSupabaseStorage()) {
+    return readStoredStateFromSupabase()
+  }
+  return readStoredFile()
+}
+
+async function writeStoredState(next: StoredSyncFile) {
+  if (shouldPreferSupabaseStorage()) {
+    return writeStoredStateToSupabase(next)
+  }
+  return writeStoredFile(next)
+}
+
 export function getGmailOAuthClient(redirectUri?: string) {
   return new google.auth.OAuth2(
     requireEnv("GOOGLE_GMAIL_CLIENT_ID"),
@@ -132,8 +192,8 @@ export async function exchangeCodeForTokens(code: string) {
 
 export async function saveRefreshToken(refreshToken: string) {
   const secret = getStorageSecret()
-  const current = await readStoredFile()
-  await writeStoredFile({
+  const current = await readStoredState()
+  await writeStoredState({
     ...current,
     refreshToken: encrypt(refreshToken, secret),
     oauthConfiguredAt: new Date().toISOString(),
@@ -145,7 +205,7 @@ export async function getStoredRefreshToken() {
     return process.env.GMAIL_REFRESH_TOKEN
   }
 
-  const current = await readStoredFile()
+  const current = await readStoredState()
   if (!current.refreshToken) {
     return null
   }
@@ -154,7 +214,7 @@ export async function getStoredRefreshToken() {
 }
 
 export async function getGmailSyncState(): Promise<GmailSyncState> {
-  const current = await readStoredFile()
+  const current = await readStoredState()
   return {
     lastHistoryId: current.lastHistoryId,
     processedMessageIds: Array.isArray(current.processedMessageIds) ? current.processedMessageIds : [],
@@ -164,14 +224,14 @@ export async function getGmailSyncState(): Promise<GmailSyncState> {
 }
 
 export async function updateGmailSyncState(update: Partial<GmailSyncState>) {
-  const current = await readStoredFile()
+  const current = await readStoredState()
   const processedMessageIds = Array.isArray(update.processedMessageIds)
     ? update.processedMessageIds.slice(-PROCESSING_CACHE_LIMIT)
     : Array.isArray(current.processedMessageIds)
       ? current.processedMessageIds.slice(-PROCESSING_CACHE_LIMIT)
       : []
 
-  await writeStoredFile({
+  await writeStoredState({
     ...current,
     lastHistoryId: update.lastHistoryId ?? current.lastHistoryId,
     lastSuccessfulPollAt: update.lastSuccessfulPollAt ?? current.lastSuccessfulPollAt,
