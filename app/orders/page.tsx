@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useRef } from "react"
 import { useAuth } from "@/app/auth-provider"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -69,6 +69,8 @@ interface OrderStats {
   partner: number
 }
 
+const PAGE_SIZE = 50
+
 function normalizePerfumeKey(value: string | null | undefined) {
   return value
     ? value
@@ -132,7 +134,13 @@ function OrdersPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [isDatabaseConfigured, setIsDatabaseConfigured] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalOrders, setTotalOrders] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [initializingData, setInitializingData] = useState(true)
+  const hasBootstrappedRef = useRef(false)
   const [editingOrder, setEditingOrder] = useState<string | null>(null)
   const [tempOrderStatus, setTempOrderStatus] = useState<string>("")
   const [tempPerfumeName, setTempPerfumeName] = useState<string>("")
@@ -202,19 +210,6 @@ function OrdersPageContent() {
     )
   }
 
-  // 計算各個order_status的函式
-  const calculateOrderStats = (orders: Order[]): OrderStats => {
-    return {
-      total: orders.length,
-      pending: orders.filter(order => ['pending', 'created', 'confirmed'].includes(order.order_status)).length,
-      processing: orders.filter(order => order.order_status === 'processing').length,
-      shipped: orders.filter(order => order.order_status === 'shipped' || order.order_status === 'shippped').length,
-      delivered: orders.filter(order => order.order_status === 'delivered').length,
-      cancelled: orders.filter(order => order.order_status === 'cancelled').length,
-      partner: orders.filter(order => isPartnerOrder(order)).length
-    }
-  }
-
   const loadOrders = async (forceReload = false) => {
     if (shouldSkipLoad(forceReload)) {
       stopLoading()
@@ -225,25 +220,53 @@ function OrdersPageContent() {
       startLoading()
       setError(null)
 
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bbrnbyzjmxgxnczzymdt.supabase.co"
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y"
-      
-      const response = await fetch(`${supabaseUrl}/rest/v1/orders?select=*&order=created_at.desc`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json'
-        }
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        pageSize: String(PAGE_SIZE),
       })
+
+      if (debouncedSearchTerm) {
+        params.set("search", debouncedSearchTerm)
+      }
+
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter)
+      }
+
+      const response = await fetch(`/api/orders?${params.toString()}`)
       
       if (response.ok) {
         const data = await response.json()
-        setOrders(data || [])
+        const nextOrders = data.orders || []
+        setOrders(nextOrders)
+        setFilteredOrders(nextOrders)
+        setTotalOrders(data.pagination?.totalCount || nextOrders.length)
+        setTotalPages(data.pagination?.totalPages || 1)
+        setStats((current) => ({
+          total: data.summary?.total ?? data.pagination?.totalCount ?? nextOrders.length,
+          pending: data.summary?.pending ?? 0,
+          processing: data.summary?.processing ?? 0,
+          shipped: data.summary?.shipped ?? 0,
+          delivered: data.summary?.delivered ?? 0,
+          cancelled: data.summary?.cancelled ?? 0,
+          partner: current.partner,
+        }))
       } else {
         const errorText = await response.text()
         console.error("載入訂單失敗:", response.status, errorText)
         setOrders([])
         setFilteredOrders([])
+        setTotalOrders(0)
+        setTotalPages(1)
+        setStats((current) => ({
+          ...current,
+          total: 0,
+          pending: 0,
+          processing: 0,
+          shipped: 0,
+          delivered: 0,
+          cancelled: 0,
+        }))
         setError(`查詢失敗: ${response.status} ${response.statusText}`)
       }
 
@@ -253,40 +276,31 @@ function OrdersPageContent() {
       setError(errorMessage)
       setOrders([])
       setFilteredOrders([])
+      setTotalOrders(0)
+      setTotalPages(1)
+      setStats((current) => ({
+        ...current,
+        total: 0,
+        pending: 0,
+        processing: 0,
+        shipped: 0,
+        delivered: 0,
+        cancelled: 0,
+      }))
     } finally {
       stopLoading()
     }
   }
 
   useEffect(() => {
-    let filtered = orders
+    setFilteredOrders(orders)
+  }, [orders])
 
-    if (searchTerm) {
-      filtered = filtered.filter(order => {
-        const searchLower = searchTerm.toLowerCase()
-        return (
-          (order.subscriber_name && order.subscriber_name.toLowerCase().includes(searchLower)) ||
-          (order.customer_email && order.customer_email.toLowerCase().includes(searchLower)) ||
-          (order.id && order.id.toLowerCase().includes(searchLower)) ||
-          (order.shopify_order_id && order.shopify_order_id.toLowerCase().includes(searchLower))
-        )
-      })
-    }
-
-    if (statusFilter === "partner") {
-      // 過濾合作對象訂單
-      filtered = filtered.filter(order => isPartnerOrder(order))
-    } else if (statusFilter !== "all") {
-      filtered = filtered.filter(order => order.order_status === statusFilter)
-    }
-
-    setFilteredOrders(filtered)
-  }, [orders, searchTerm, statusFilter, partnerList])
-
-  // 當訂單或合作對象列表更新時，重新計算統計數據
   useEffect(() => {
-    const newStats = calculateOrderStats(orders)
-    setStats(newStats)
+    setStats((current) => ({
+      ...current,
+      partner: orders.filter(order => isPartnerOrder(order)).length,
+    }))
   }, [orders, partnerList])
 
   // 暫時移除認證檢查，直接顯示訂單管理頁面
@@ -298,16 +312,46 @@ function OrdersPageContent() {
   // }, [authLoading, isAuthenticated, router])
 
   useEffect(() => {
-    // 直接載入訂單資料，不需要用戶認證
-    resetLoadingState()
-    loadOrders()
-    // 載入訂閱者數量
-    loadSubscribersCount()
-    // 載入合作對象列表
-    loadPartnerList()
-    // 載入香水列表
-    loadPerfumes()
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        resetLoadingState()
+        await Promise.all([
+          loadSubscribersCount(),
+          loadPartnerList(),
+          loadPerfumes(),
+        ])
+        await loadOrders(true)
+        hasBootstrappedRef.current = true
+      } finally {
+        if (!cancelled) {
+          setInitializingData(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim())
+      setCurrentPage(1)
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [searchTerm])
+
+  useEffect(() => {
+    if (!hasBootstrappedRef.current) {
+      return
+    }
+    resetLoadingState()
+    loadOrders(true)
+  }, [currentPage, debouncedSearchTerm, statusFilter])
 
   useEffect(() => {
     if (orders.length === 0 || perfumes.length === 0) {
@@ -336,20 +380,15 @@ function OrdersPageContent() {
 
     ;(async () => {
       try {
-        await Promise.all(
-          ordersToUpdate.map(async (order) => {
-            await fetch("/api/orders", {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                id: order.id,
-                notes: order.notes,
-              }),
-            })
-          })
-        )
+        await fetch("/api/orders", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            orders: ordersToUpdate,
+          }),
+        })
 
         setOrders((currentOrders) =>
           currentOrders.map((order) => {
@@ -365,7 +404,7 @@ function OrdersPageContent() {
 
   const loadSubscribersCount = async () => {
     try {
-      const response = await fetch('/api/subscribers')
+      const response = await fetch('/api/subscribers?summary=count')
       if (response.ok) {
         const data = await response.json()
         setSubscribersCount(data.count || 0)
@@ -374,28 +413,6 @@ function OrdersPageContent() {
       console.error("載入訂閱者數量失敗:", err)
     }
   }
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        resetLoadingState()
-        loadOrders(true)
-      }
-    }
-
-    const handleFocus = () => {
-      resetLoadingState()
-      loadOrders(true)
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-    window.addEventListener("focus", handleFocus)
-    
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
-      window.removeEventListener("focus", handleFocus)
-    }
-  }, [])
 
   const handleRetry = () => {
     setError(null)
@@ -765,11 +782,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("all")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Package className="w-4 h-4 inline mr-3" />
-              所有訂單 ({stats.total})
+              所有訂單 ({initializingData ? "..." : stats.total})
             </button>
             <button 
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
@@ -779,11 +797,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("processing")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Package className="w-4 h-4 inline mr-3" />
-              處理中訂單 ({stats.processing})
+              處理中訂單 ({initializingData ? "..." : stats.processing})
             </button>
             <button 
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
@@ -793,11 +812,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("shipped")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Package className="w-4 h-4 inline mr-3" />
-              已出貨訂單 ({stats.shipped})
+              已出貨訂單 ({initializingData ? "..." : stats.shipped})
             </button>
             <button 
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
@@ -807,11 +827,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("delivered")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Package className="w-4 h-4 inline mr-3" />
-              已送達訂單 ({stats.delivered})
+              已送達訂單 ({initializingData ? "..." : stats.delivered})
             </button>
             <button 
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
@@ -821,11 +842,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("pending")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Package className="w-4 h-4 inline mr-3" />
-              待處理訂單 ({stats.pending})
+              待處理訂單 ({initializingData ? "..." : stats.pending})
             </button>
             <button 
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors text-sm ${
@@ -835,11 +857,12 @@ function OrdersPageContent() {
               }`}
               onClick={() => {
                 setStatusFilter("partner")
+                setCurrentPage(1)
                 setSidebarOpen(false)
               }}
             >
               <Truck className="w-4 h-4 inline mr-3" />
-              合作對象訂單 ({stats.partner})
+              合作對象訂單 ({initializingData ? "..." : stats.partner})
             </button>
             
             {/* 分隔線 */}
@@ -1013,31 +1036,31 @@ function OrdersPageContent() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-4 mb-6 lg:mb-8">
           <Card className="border-gray-200">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-gray-800">{stats.total}</div>
+              <div className="text-2xl font-bold text-gray-800">{initializingData ? "..." : totalOrders}</div>
               <p className="text-sm text-gray-600">總訂單</p>
             </CardContent>
           </Card>
           <Card className="border-gray-300 bg-gray-50">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-gray-700">{stats.pending}</div>
+              <div className="text-2xl font-bold text-gray-700">{initializingData ? "..." : stats.pending}</div>
               <p className="text-sm text-gray-600">待處理</p>
             </CardContent>
           </Card>
           <Card className="border-blue-300 bg-blue-50">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-blue-700">{stats.processing}</div>
+              <div className="text-2xl font-bold text-blue-700">{initializingData ? "..." : stats.processing}</div>
               <p className="text-sm text-blue-600">處理中</p>
             </CardContent>
           </Card>
           <Card className="border-purple-300 bg-purple-50">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-purple-700">{stats.shipped}</div>
+              <div className="text-2xl font-bold text-purple-700">{initializingData ? "..." : stats.shipped}</div>
               <p className="text-sm text-purple-600">已出貨</p>
             </CardContent>
           </Card>
           <Card className="border-green-300 bg-green-50">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-green-700">{stats.delivered}</div>
+              <div className="text-2xl font-bold text-green-700">{initializingData ? "..." : stats.delivered}</div>
               <p className="text-sm text-green-600">已送達</p>
             </CardContent>
           </Card>
@@ -1062,7 +1085,10 @@ function OrdersPageContent() {
               <div className="flex gap-2">
                 <select
                   value={statusFilter}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    setStatusFilter(e.target.value)
+                    setCurrentPage(1)
+                  }}
                   className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#A69E8B] focus:border-transparent text-sm min-w-0 flex-1 sm:flex-none"
                 >
                   <option value="all">所有狀態</option>
@@ -1084,9 +1110,9 @@ function OrdersPageContent() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
-              訂單列表 ({filteredOrders.length})
+              訂單列表 ({initializingData ? "..." : totalOrders})
             </CardTitle>
-            <CardDescription>所有訂單的詳細資訊</CardDescription>
+            <CardDescription>每頁 {PAGE_SIZE} 筆，目前第 {currentPage} / {totalPages} 頁</CardDescription>
           </CardHeader>
           <CardContent>
             {!isDatabaseConfigured ? (
@@ -1476,6 +1502,34 @@ function OrdersPageContent() {
                   </div>
                   )
                 })}
+              </div>
+            )}
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4">
+                <div className="text-sm text-gray-500">
+                  顯示第 {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, totalOrders)} 筆，共 {totalOrders} 筆
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={currentPage <= 1 || loading}
+                  >
+                    上一頁
+                  </Button>
+                  <span className="text-sm text-gray-600">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={currentPage >= totalPages || loading}
+                  >
+                    下一頁
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

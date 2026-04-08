@@ -7,14 +7,147 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ||
                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
                      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicm5ieXpqbXhneG5jenp5bWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwNDQ3ODcsImV4cCI6MjA2MDYyMDc4N30.S5BFoAq6idmTKLwGYa0bhxFVEoEmQ3voshyX03FVe0Y"
 
-// GET - 獲取訂單列表
-export async function GET() {
-  try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/orders?select=*&order=updated_at.desc`, {
+function sanitizeSearchTerm(value: string) {
+  return value.replace(/[(),]/g, ' ').trim()
+}
+
+async function getOrderCount(search: string, statusFilter?: string) {
+  const url = new URL(`${supabaseUrl}/rest/v1/orders`)
+  url.searchParams.set('select', 'id')
+  url.searchParams.set('limit', '1')
+
+  if (statusFilter) {
+    url.searchParams.set('order_status', statusFilter)
+  }
+
+  if (search) {
+    url.searchParams.set(
+      'or',
+      `(subscriber_name.ilike.*${search}*,customer_email.ilike.*${search}*,id.ilike.*${search}*,shopify_order_id.ilike.*${search}*)`
+    )
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'count=exact',
+      'Range-Unit': 'items',
+      'Range': '0-0'
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Count query failed: ${response.status}`)
+  }
+
+  const contentRange = response.headers.get('content-range') || ''
+  return Number(contentRange.split('/')[1] || 0)
+}
+
+async function patchSingleOrder(id: string, updateData: Record<string, any>) {
+  let shouldDecreaseInventory = false
+  let perfumeNameToDecrease: string | null = null
+
+  if (updateData.perfume_name !== undefined && updateData.perfume_name !== null && updateData.perfume_name.trim() !== '') {
+    const currentOrderResponse = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}&select=perfume_name`, {
       headers: {
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (currentOrderResponse.ok) {
+      const currentOrders = await currentOrderResponse.json()
+      const currentOrder = Array.isArray(currentOrders) && currentOrders.length > 0 ? currentOrders[0] : null
+      const currentPerfumeName = currentOrder?.perfume_name?.trim() || ''
+      const newPerfumeName = updateData.perfume_name.trim()
+
+      if (currentPerfumeName !== newPerfumeName) {
+        shouldDecreaseInventory = true
+        perfumeNameToDecrease = newPerfumeName
+      }
+    }
+  }
+
+  const orderWithTimestamp: Record<string, any> = {
+    ...updateData,
+    updated_at: new Date().toISOString()
+  }
+
+  const hasShipDateField = Object.prototype.hasOwnProperty.call(updateData, 'ship_date')
+  if (!hasShipDateField && typeof updateData.order_status === 'string' && updateData.order_status.toLowerCase() === 'shipped') {
+    orderWithTimestamp.ship_date = new Date().toISOString()
+  } else if (hasShipDateField && updateData.ship_date) {
+    orderWithTimestamp.ship_date = new Date(updateData.ship_date).toISOString()
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(orderWithTimestamp)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Supabase update failed: ${response.status} - ${errorText}`)
+  }
+
+  const updatedOrder = await response.json()
+
+  if (shouldDecreaseInventory && perfumeNameToDecrease) {
+    try {
+      await decreasePerfumeUnits(perfumeNameToDecrease)
+      console.log(`✅ 訂單 ${id} 已更新，並減少香水 "${perfumeNameToDecrease}" 的庫存`)
+    } catch (inventoryError) {
+      console.error(`⚠️ 訂單更新成功，但減少庫存失敗:`, inventoryError)
+    }
+  }
+
+  return updatedOrder[0]
+}
+
+// GET - 獲取訂單列表
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const page = Math.max(1, Number(searchParams.get('page') || '1'))
+    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') || '50')))
+    const status = searchParams.get('status') || 'all'
+    const search = sanitizeSearchTerm(searchParams.get('search') || '')
+    const rangeStart = (page - 1) * pageSize
+    const rangeEnd = rangeStart + pageSize - 1
+
+    const url = new URL(`${supabaseUrl}/rest/v1/orders`)
+    url.searchParams.set('select', '*')
+    url.searchParams.set('order', 'created_at.desc')
+
+    if (status && status !== 'all') {
+      url.searchParams.set('order_status', `eq.${status}`)
+    }
+
+    if (search) {
+      url.searchParams.set(
+        'or',
+        `(subscriber_name.ilike.*${search}*,customer_email.ilike.*${search}*,id.ilike.*${search}*,shopify_order_id.ilike.*${search}*)`
+      )
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'count=exact',
+        'Range-Unit': 'items',
+        'Range': `${rangeStart}-${rangeEnd}`
       }
     })
 
@@ -23,7 +156,34 @@ export async function GET() {
     }
 
     const orders = await response.json()
-    return NextResponse.json({ success: true, orders })
+    const contentRange = response.headers.get('content-range') || ''
+    const totalCount = Number(contentRange.split('/')[1] || orders.length || 0)
+    const [pendingCount, processingCount, shippedCount, deliveredCount, cancelledCount] = await Promise.all([
+      getOrderCount(search, 'in.(pending,created,confirmed)'),
+      getOrderCount(search, 'eq.processing'),
+      getOrderCount(search, 'in.(shipped,shippped)'),
+      getOrderCount(search, 'eq.delivered'),
+      getOrderCount(search, 'eq.cancelled'),
+    ])
+
+    return NextResponse.json({
+      success: true,
+      orders,
+      summary: {
+        total: totalCount,
+        pending: pendingCount,
+        processing: processingCount,
+        shipped: shippedCount,
+        delivered: deliveredCount,
+        cancelled: cancelledCount,
+      },
+      pagination: {
+        page,
+        pageSize,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+      },
+    })
   } catch (error) {
     console.error('Error fetching orders:', error)
     return NextResponse.json(
@@ -117,8 +277,25 @@ export async function POST(request: NextRequest) {
 // PUT - 更新訂單
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
-    
+    const body = await request.json()
+
+    if (Array.isArray(body?.orders)) {
+      const updates = body.orders.filter((order: any) => order?.id)
+      if (updates.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'At least one order update is required' },
+          { status: 400 }
+        )
+      }
+
+      const updatedOrders = await Promise.all(
+        updates.map(({ id, ...updateData }: any) => patchSingleOrder(id, updateData))
+      )
+
+      return NextResponse.json({ success: true, orders: updatedOrders })
+    }
+
+    const { id, ...updateData } = body
     if (!id) {
       return NextResponse.json(
         { success: false, error: 'Order ID is required' },
@@ -126,78 +303,8 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // 檢查是否有香水名稱更新，如果有且是新增的，則減少庫存
-    let shouldDecreaseInventory = false
-    let perfumeNameToDecrease: string | null = null
-
-    if (updateData.perfume_name !== undefined && updateData.perfume_name !== null && updateData.perfume_name.trim() !== '') {
-      // 先獲取原始訂單資料，檢查是否為新增香水名稱
-      const currentOrderResponse = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}&select=perfume_name`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (currentOrderResponse.ok) {
-        const currentOrders = await currentOrderResponse.json()
-        const currentOrder = Array.isArray(currentOrders) && currentOrders.length > 0 ? currentOrders[0] : null
-        
-        // 如果原本沒有香水名稱，或香水名稱不同，則減少庫存
-        const currentPerfumeName = currentOrder?.perfume_name?.trim() || ''
-        const newPerfumeName = updateData.perfume_name.trim()
-        
-        if (currentPerfumeName !== newPerfumeName) {
-          shouldDecreaseInventory = true
-          perfumeNameToDecrease = newPerfumeName
-        }
-      }
-    }
-
-    // 為更新添加 updated_at 時間戳
-    const orderWithTimestamp: Record<string, any> = {
-      ...updateData,
-      updated_at: new Date().toISOString()
-    }
-
-    const hasShipDateField = Object.prototype.hasOwnProperty.call(updateData, 'ship_date')
-    if (!hasShipDateField && typeof updateData.order_status === 'string' && updateData.order_status.toLowerCase() === 'shipped') {
-      orderWithTimestamp.ship_date = new Date().toISOString()
-    } else if (hasShipDateField && updateData.ship_date) {
-      orderWithTimestamp.ship_date = new Date(updateData.ship_date).toISOString()
-    }
-
-    const response = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(orderWithTimestamp)
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Supabase update failed: ${response.status} - ${errorText}`)
-    }
-
-    const updatedOrder = await response.json()
-    
-    // 如果訂單更新成功且需要減少庫存，則更新 Google Sheet
-    if (shouldDecreaseInventory && perfumeNameToDecrease) {
-      try {
-        await decreasePerfumeUnits(perfumeNameToDecrease)
-        console.log(`✅ 訂單 ${id} 已更新，並減少香水 "${perfumeNameToDecrease}" 的庫存`)
-      } catch (inventoryError) {
-        console.error(`⚠️ 訂單更新成功，但減少庫存失敗:`, inventoryError)
-        // 不影響訂單更新，只記錄錯誤
-      }
-    }
-
-    return NextResponse.json({ success: true, order: updatedOrder[0] })
+    const updatedOrder = await patchSingleOrder(id, updateData)
+    return NextResponse.json({ success: true, order: updatedOrder })
   } catch (error) {
     console.error('Error updating order:', error)
     return NextResponse.json(

@@ -182,6 +182,9 @@ function resolvePerfumeInfo(
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const summary = searchParams.get('summary')
+
     // 獲取訂閱者列表
     const subscribersResponse = await fetch(`${SUPABASE_URL}/rest/v1/subscribers?select=*&order=created_at.desc`, {
       headers: {
@@ -206,6 +209,13 @@ export async function GET(request: NextRequest) {
           return status !== 'terminate' && status !== 'terminated'
         })
       : []
+
+    if (summary === 'count') {
+      return NextResponse.json({
+        success: true,
+        count: filteredSubscribers.length,
+      })
+    }
 
     const [ordersResponse, perfumeData] = await Promise.all([
       fetch(`${SUPABASE_URL}/rest/v1/orders?select=user_id,customer_email,subscriber_name,perfume_name,order_status,created_at&perfume_name=not.is.null&order_status=in.(shipped,shippped,delivered)&order=created_at.desc`, {
