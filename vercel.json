@@ -2,23 +2,11 @@
     "crons": [
       {
         "path": "/api/cron/gmail-payment-sync",
-        "schedule": "0 0 * * *"
-      },
-      {
-        "path": "/api/orders/fill-missing-phones",
-        "schedule": "5 0 * * *"
-      },
-      {
-        "path": "/api/orders/fill-missing-addresses",
-        "schedule": "10 0 * * *"
+        "schedule": "0 1 * * *"
       },
       {
         "path": "/api/auto-generate-orders",
         "schedule": "15 0 * * *"
-      },
-      {
-        "path": "/api/orders/auto-mark-delivered",
-        "schedule": "20 0 * * *"
       }
     ]
   }
