@@ -12,8 +12,12 @@ import { syncPaymentEmail } from "@/lib/payment-sync"
 const DEFAULT_GMAIL_QUERY =
   'from:info@newebpay.com subject:"藍新金流定期定額信用卡刷卡結果通知信" newer_than:30d'
 
+/**
+ * 取得 Cron 驗證用的 Secret
+ * 優先序：系統自動生成的 CRON_SECRET > 自定義 GMAIL_SYNC_CRON_SECRET
+ */
 function getCronSecret() {
-  return process.env.GMAIL_SYNC_CRON_SECRET || process.env.CRON_SECRET || ""
+  return process.env.CRON_SECRET || process.env.GMAIL_SYNC_CRON_SECRET || ""
 }
 
 function getMaxResults() {
@@ -118,16 +122,31 @@ async function collectCandidateMessageIds(
 export async function GET(request: NextRequest) {
   try {
     const cronSecret = getCronSecret()
-    if (cronSecret) {
-      const authHeader = request.headers.get("authorization")
-      const querySecret = getSecretFromQuery(request)
-      const headerMatches = authHeader === `Bearer ${cronSecret}`
-      const queryMatches = querySecret === cronSecret
+    
+    // --- 強化驗證邏輯 ---
+    const authHeader = request.headers.get("authorization")
+    const querySecret = getSecretFromQuery(request)
+    
+    // 確保 cronSecret 存在且匹配 (支援 Header 或 URL Query 帶 secret)
+    const headerMatches = cronSecret && authHeader === `Bearer ${cronSecret}`
+    const queryMatches = cronSecret && querySecret === cronSecret
 
-      if (!headerMatches && !queryMatches) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-      }
+    if (!headerMatches && !queryMatches) {
+      console.error("Cron Auth Failed:", {
+        hasHeader: !!authHeader,
+        hasCronSecretInEnv: !!cronSecret,
+      });
+
+      return NextResponse.json({ 
+        success: false, 
+        error: "Unauthorized",
+        debug: {
+          envSecretExists: !!cronSecret,
+          headerReceived: !!authHeader,
+        }
+      }, { status: 401 })
     }
+    // --- 驗證結束 ---
 
     const dryRun = getDryRun(request)
     const bootstrapMode = getBootstrapMode(request)
